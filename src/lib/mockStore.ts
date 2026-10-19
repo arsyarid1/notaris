@@ -590,9 +590,11 @@ class MockDatabaseStore {
     }
   }
 
-  // Public helper to seed default order_templates into Supabase if empty
-  public async seedOrderTemplatesToSupabase(): Promise<void> {
-    if (!this.isSupabaseConfigured()) return;
+  // Public helper to seed default order_templates into Supabase
+  public async seedOrderTemplatesToSupabase(): Promise<{ success: boolean; error?: string; insertedCount?: number }> {
+    if (!this.isSupabaseConfigured()) {
+      return { success: false, error: 'Supabase URL atau Anon Key belum terkonfigurasi di environment variables.' };
+    }
 
     const defaultTemplates = [
       {
@@ -652,7 +654,12 @@ class MockDatabaseStore {
 
     try {
       // 1. Fetch existing templates from Supabase
-      const { data: existing } = await supabase.from('order_templates').select('*');
+      const { data: existing, error: fetchErr } = await supabase.from('order_templates').select('*');
+      if (fetchErr) {
+        console.error('Gagal membaca order_templates saat seed:', fetchErr);
+        return { success: false, error: fetchErr.message };
+      }
+
       const existingNames = new Set((existing || []).map((t: any) => t.name.trim().toLowerCase()));
 
       // Filter to only insert missing default templates
@@ -660,16 +667,23 @@ class MockDatabaseStore {
         t => !existingNames.has(t.name.trim().toLowerCase())
       );
 
+      let insertCount = 0;
       if (toInsert.length > 0) {
-        const { error } = await supabase.from('order_templates').insert(toInsert);
-        if (error) {
-          console.warn("Retrying order_templates seed with 'checklist_items' column:", error);
-          await supabase.from('order_templates').insert(toInsert.map(t => ({
+        const { error: insertErr } = await supabase.from('order_templates').upsert(toInsert);
+        if (insertErr) {
+          console.warn("Mencoba ulang seed dengan kolom checklist_items:", insertErr);
+          const fallbackPayload = toInsert.map(t => ({
             tenant_id: t.tenant_id,
             name: t.name,
             checklist_items: t.checklists
-          })));
+          }));
+          const { error: retryErr } = await supabase.from('order_templates').upsert(fallbackPayload);
+          if (retryErr) {
+            console.error("Gagal menyuntikkan template ke Supabase:", retryErr);
+            return { success: false, error: retryErr.message };
+          }
         }
+        insertCount = toInsert.length;
       }
 
       // 2. Clean up any existing duplicate rows in Supabase table
@@ -693,8 +707,10 @@ class MockDatabaseStore {
       }
 
       console.log('Successfully seeded & cleaned order_templates in Supabase.');
-    } catch (e) {
+      return { success: true, insertedCount: insertCount };
+    } catch (e: any) {
       console.error('Error seeding order_templates to Supabase:', e);
+      return { success: false, error: e?.message || String(e) };
     }
   }
 

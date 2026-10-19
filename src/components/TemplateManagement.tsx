@@ -44,19 +44,27 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Live Supabase Templates
+  // Live Supabase Templates & state
   const [dbTemplates, setDbTemplates] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Live Fetch Templates from Supabase
   const fetchLiveTemplates = async () => {
     setIsLoading(true);
+    setFetchError(null);
     try {
       if (mockDb.isSupabaseConfigured()) {
         const { data, error } = await supabase
           .from('order_templates')
           .select('*');
         
-        if (!error && data) {
+        if (error) {
+          console.error("Gagal mengambil live templates dari Supabase:", error);
+          setFetchError(`Koneksi Database bermasalah (${error.message || '401 Unauthorized'})`);
+          return;
+        }
+
+        if (data) {
           const mapped = data.map((t: any) => ({
             id: t.id,
             tenant_id: t.tenant_id,
@@ -66,8 +74,9 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
           setDbTemplates(deduplicateTemplates(mapped));
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Gagal mengambil live templates dari Supabase:", err);
+      setFetchError(err?.message || 'Gagal tersambung ke database Supabase');
     } finally {
       setIsLoading(false);
     }
@@ -85,11 +94,11 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
     return () => unsubscribe();
   }, []);
 
-  // Filtered templates from Supabase or fallback mockStore
+  // Filtered templates: prioritize live dbTemplates from Supabase
   const templates = useMemo(() => {
     let list = dbTemplates.length > 0 
       ? dbTemplates 
-      : mockDb.orderTemplates;
+      : (mockDb.isSupabaseConfigured() && fetchError ? [] : mockDb.orderTemplates);
     
     list = deduplicateTemplates(list);
 
@@ -98,7 +107,7 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
       list = list.filter(t => t.name.toLowerCase().includes(q));
     }
     return list;
-  }, [searchQuery, storeTick, dbTemplates]);
+  }, [searchQuery, storeTick, dbTemplates, fetchError]);
 
   // Open modal for create
   const handleOpenCreate = () => {
@@ -173,13 +182,17 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
             .eq('id', editingTemplateId);
 
           if (error) {
-            await supabase
+            const { error: retryError } = await supabase
               .from('order_templates')
               .update({
                 name: templateName.trim(),
                 checklist_items: filteredItems
               })
               .eq('id', editingTemplateId);
+
+            if (retryError) {
+              throw new Error(`Gagal memperbarui ke database: ${retryError.message}`);
+            }
           }
         } else {
           // INSERT query to 'order_templates' table
@@ -193,13 +206,17 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
 
           if (error) {
             console.warn("Error inserting with 'checklists', trying fallback 'checklist_items':", error);
-            await supabase
+            const { error: retryError } = await supabase
               .from('order_templates')
               .insert({
                 tenant_id: activeTenant.id,
                 name: templateName.trim(),
                 checklist_items: filteredItems
               });
+
+            if (retryError) {
+              throw new Error(`Gagal menyimpan ke database: ${retryError.message}`);
+            }
           }
         }
       }
@@ -254,11 +271,17 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
   const handleSeedToSupabase = async () => {
     setIsSyncingSupabase(true);
     try {
-      await mockDb.seedOrderTemplatesToSupabase();
+      const res = await mockDb.seedOrderTemplatesToSupabase();
+      if (!res.success) {
+        console.error("Gagal menyuntikkan data template ke Supabase:", res.error);
+        alert(`Gagal menyuntik data ke database: ${res.error}`);
+        return;
+      }
       await fetchLiveTemplates();
-      alert('Berhasil menyuntikkan & menyinkronkan data template ke Supabase!');
+      alert('Data template berhasil masuk ke Supabase!');
     } catch (err: any) {
-      alert('Gagal menyuntikkan data: ' + (err.message || err));
+      console.error("Gagal menyuntikkan data:", err);
+      alert('Gagal menyuntik data: ' + (err.message || err));
     } finally {
       setIsSyncingSupabase(false);
     }
@@ -351,9 +374,32 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
         )}
       </div>
 
+      {/* Alert Error State if Fetch from Supabase Fails */}
+      {fetchError && (
+        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>
+              <strong>Koneksi Database:</strong> {fetchError}. Pastikan Vercel/Cloudflare environment variables VITE_SUPABASE_ANON_KEY sudah valid dan tabel memiliki izin akses publik/anonim.
+            </span>
+          </div>
+          <button
+            onClick={() => fetchLiveTemplates()}
+            className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded font-medium text-[11px] shrink-0"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      )}
+
       {/* Templates Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {templates.length === 0 ? (
+        {isLoading ? (
+          <div className="col-span-2 p-12 text-center text-slate-500 bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center space-y-2">
+            <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+            <p className="text-xs text-slate-400">Memuat data template langsung dari Supabase...</p>
+          </div>
+        ) : templates.length === 0 ? (
           <div className="col-span-2 p-12 text-center text-slate-500 bg-slate-900 border border-slate-800 rounded-xl">
             <ClipboardList className="w-12 h-12 text-slate-700 mx-auto mb-3" />
             <p className="text-sm font-medium text-slate-400">Belum ada template order atau tidak cocok</p>
