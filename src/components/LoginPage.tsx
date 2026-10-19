@@ -30,10 +30,9 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const isSupabase = mockDb.isSupabaseConfigured();
   const activeTenant = mockDb.tenants[0];
 
-  // Handle Login via Form Submission
+  // Handle Login via Supabase GoTrue Auth
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -46,132 +45,61 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
     setLoading(true);
 
+    const loginIdentifier = emailOrUsername.includes('@')
+      ? emailOrUsername.trim().toLowerCase()
+      : `${emailOrUsername.trim().toLowerCase()}@kantornotaris.com`;
+
     try {
-      if (isSupabase) {
-        let authenticatedUser: UserType | null = null;
+      // Panggil langsung Supabase GoTrue Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginIdentifier,
+        password: password.trim(),
+      });
 
-        const emailToTry = emailOrUsername.includes('@') 
-          ? emailOrUsername.trim().toLowerCase() 
-          : `${emailOrUsername.trim().toLowerCase()}@kantornotaris.com`;
+      if (error) {
+        console.error('Login failed:', error);
+        setErrorMessage(error.message || 'Login gagal. Periksa kembali email dan kata sandi Anda.');
+        setLoading(false);
+        return;
+      }
 
-        // 1. Try Supabase Auth signInWithPassword
+      if (data?.user) {
+        // Ambil profil dari tabel users jika tersedia
+        let profile: UserType | null = null;
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: emailToTry,
-            password: password.trim()
-          });
+          const { data: dbProfile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', data.user.email)
+            .maybeSingle();
 
-          if (!error && data?.user) {
-            // Find corresponding profile in 'users' table
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('email', data.user.email)
-              .maybeSingle();
-
-            if (profile) {
-              authenticatedUser = profile as UserType;
-            } else {
-              authenticatedUser = {
-                id: data.user.id,
-                tenant_id: (data.user.user_metadata?.tenant_id) || 'a0000000-0000-0000-0000-000000000001',
-                name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'User',
-                username: data.user.email?.split('@')[0] || 'user',
-                email: data.user.email || '',
-                role: (data.user.user_metadata?.role as any) || 'NOTARIS',
-                password: ''
-              };
-            }
-          } else if (error && error.message.includes('Invalid login credentials')) {
-            // Try signUp if user does not exist in Supabase Auth yet
-            const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-              email: emailToTry,
-              password: password.trim()
-            });
-
-            if (!signUpErr && signUpData?.user) {
-              const { data: profile } = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', signUpData.user.email)
-                .maybeSingle();
-
-              if (profile) {
-                authenticatedUser = profile as UserType;
-              } else {
-                authenticatedUser = {
-                  id: signUpData.user.id,
-                  tenant_id: (signUpData.user.user_metadata?.tenant_id) || 'a0000000-0000-0000-0000-000000000001',
-                  name: signUpData.user.user_metadata?.full_name || signUpData.user.email?.split('@')[0] || 'User',
-                  username: signUpData.user.email?.split('@')[0] || 'user',
-                  email: signUpData.user.email || '',
-                  role: (signUpData.user.user_metadata?.role as any) || 'NOTARIS',
-                  password: ''
-                };
-              }
-            }
+          if (dbProfile) {
+            profile = dbProfile as UserType;
           }
-        } catch (authErr) {
-          // Fall through to database users table check
+        } catch (dbErr) {
+          console.error('Error fetching profile from users table:', dbErr);
         }
 
-        // 2. Profile matching from Supabase users table
-        if (!authenticatedUser) {
-          const cleanInput = emailOrUsername.trim().toLowerCase();
-
-          try {
-            const { data: dbUsers } = await supabase.from('users').select('*');
-            if (dbUsers && dbUsers.length > 0) {
-              const dbFound = dbUsers.find((u: any) => 
-                (u.username && u.username.toLowerCase() === cleanInput) ||
-                (u.email && u.email.toLowerCase() === cleanInput)
-              );
-              if (dbFound) {
-                authenticatedUser = dbFound as UserType;
-              }
-            }
-          } catch (dbErr) {
-            console.error('Error fetching db users in login:', dbErr);
-          }
-        }
-
-        if (authenticatedUser) {
-          try {
-            localStorage.setItem('notaris_active_user', JSON.stringify(authenticatedUser));
-          } catch {
-            // LocalStorage write error ignored
-          }
-          setSuccessMessage(`Selamat datang kembali, ${authenticatedUser.name}`);
-          setTimeout(() => onLoginSuccess(authenticatedUser!), 600);
-          return;
-        } else {
-          setErrorMessage('Kredensial tidak valid. Silakan periksa kembali email/username dan kata sandi Anda.');
-          return;
-        }
-      } else {
-        // Local simulation / Offline Mode
-        await new Promise(resolve => setTimeout(resolve, 600));
-
-        const cleanInput = emailOrUsername.trim().toLowerCase();
-        
-        const foundUser = mockDb.users.find(u => 
-          u.username.toLowerCase() === cleanInput || 
-          (u.email && u.email.toLowerCase() === cleanInput)
-        );
-
-        if (!foundUser) {
-          setErrorMessage('Akun tidak terdaftar. Periksa kembali email atau username Anda.');
-          setLoading(false);
-          return;
+        if (!profile) {
+          profile = {
+            id: data.user.id,
+            tenant_id: (data.user.user_metadata?.tenant_id) || 'a0000000-0000-0000-0000-000000000001',
+            name: data.user.user_metadata?.full_name || data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
+            username: data.user.email ? data.user.email.split('@')[0] : 'user',
+            email: data.user.email || '',
+            role: (data.user.user_metadata?.role as any) || 'NOTARIS',
+            password: '',
+          };
         }
 
         try {
-          localStorage.setItem('notaris_active_user', JSON.stringify(foundUser));
+          localStorage.setItem('notaris_active_user', JSON.stringify(profile));
         } catch {
           // LocalStorage write error ignored
         }
-        setSuccessMessage(`Masuk sukses! Selamat datang kembali, ${foundUser.name}`);
-        setTimeout(() => onLoginSuccess(foundUser), 800);
+
+        setSuccessMessage(`Login berhasil! Selamat datang kembali, ${profile.name}`);
+        setTimeout(() => onLoginSuccess(profile!), 400);
       }
     } catch (err: any) {
       console.error('Login error:', err);
@@ -327,13 +255,9 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </form>
 
           {/* Connection Status Badge */}
-          <div className="p-3 bg-slate-950 rounded-lg border border-slate-850 flex items-center gap-2 text-[10px] text-slate-400">
+          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center gap-2 text-[10px] text-slate-400">
             <Info className="w-4 h-4 text-indigo-400 shrink-0" />
-            <span>
-              {isSupabase 
-                ? 'Koneksi Supabase Auth Aktif. Kredensial divalidasi langsung ke server.' 
-                : 'Mode Lokal / Offline Aktif. Silakan masukkan email/username beserta kata sandi terdaftar Anda.'}
-            </span>
+            <span>Koneksi Supabase Auth Aktif. Kredensial divalidasi langsung ke server database.</span>
           </div>
 
         </div>
