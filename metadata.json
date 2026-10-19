@@ -1,0 +1,6 @@
+{
+  "name": "Notaris SaaS",
+  "description": "Multi-Tenant Notary SaaS with PostgreSQL Schema, Interactive ERD, and Row Level Security (RLS) Simulator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
