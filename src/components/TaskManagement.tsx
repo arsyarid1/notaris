@@ -409,14 +409,11 @@ export default function TaskManagement({ activeUser, activeTenant }: TaskManagem
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'tasks' },
-          (payload) => {
-            console.log('Realtime tasks payload received:', payload);
+          () => {
             fetchTasks();
           }
         )
-        .subscribe((status) => {
-          console.log('TaskManagement realtime subscription status:', status);
-        });
+        .subscribe();
     }
 
     const unsubscribeMock = mockDb.subscribe(() => {
@@ -598,8 +595,8 @@ export default function TaskManagement({ activeUser, activeTenant }: TaskManagem
 
       const payload = {
         tenant_id: tenantId,
-        title: newTaskTitle.trim(),
-        description: newTaskDescription.trim() || null,
+        title: newTaskTitle.trim().replace(/<[^>]*>?/gm, ''),
+        description: newTaskDescription.trim() ? newTaskDescription.trim().replace(/<[^>]*>?/gm, '') : null,
         status: newTaskStatus || 'PENDING',
         order_id: newTaskOrderId && newTaskOrderId.trim() !== '' ? newTaskOrderId : null,
         assigned_to_user_id: newTaskAssignedTo && newTaskAssignedTo.trim() !== '' ? newTaskAssignedTo : (activeUser.id || null)

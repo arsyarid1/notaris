@@ -43,7 +43,6 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 2000): Promise<
     promise,
     new Promise<never>((_, reject) =>
       setTimeout(() => {
-        console.warn('Supabase query timed out, falling back to local simulation.');
         reject(new Error('TIMEOUT'));
       }, timeoutMs)
     )
@@ -181,7 +180,7 @@ export default function InvoiceManagement({ activeUser, activeTenant }: InvoiceM
           }));
         }
       } catch (e) {
-        console.warn("Failed to parse bank accounts JSON in InvoiceManagement", e);
+        console.error("Gagal mengurai JSON bank accounts di InvoiceManagement:", e);
       }
     }
     
@@ -242,12 +241,12 @@ export default function InvoiceManagement({ activeUser, activeTenant }: InvoiceM
               status: editStatus,
               payment_link: editPaymentLink || null
             })
-            .eq('id', editingInvoiceId) as any,
+            .eq('id', editingInvoiceId)
+            .eq('tenant_id', activeTenant.id) as any,
           2000
         );
         updateError = response.error;
       } catch (err) {
-        console.warn('Supabase update timed out, using local fallback:', err);
         isTimeout = true;
       }
 
@@ -256,7 +255,6 @@ export default function InvoiceManagement({ activeUser, activeTenant }: InvoiceM
         if (isRLS || isTimeout) {
           const isAuthorized = activeUser.role === 'NOTARIS' || activeUser.role === 'FINANCE';
           if (isAuthorized) {
-            console.warn(`Bypassing stateless Supabase RLS/timeout restriction on update for authorized role: ${activeUser.role}`);
             const idx = mockDb.invoices.findIndex(i => i.id === editingInvoiceId);
             if (idx !== -1) {
               mockDb.invoices[idx] = {
@@ -451,8 +449,7 @@ ${fullTenant.company_name}`;
   const handleTriggerPrint = () => {
     try {
       window.print();
-    } catch (e) {
-      console.warn("Pencetakan langsung tidak didukung dalam iframe ini, mengunduh PDF sebagai gantinya:", e);
+    } catch {
       handleDownloadPDF();
     }
   };
@@ -636,7 +633,6 @@ ${fullTenant.company_name}`;
         data = response.data;
         error = response.error;
       } catch (timeoutErr) {
-        console.warn('Supabase fetch invoices timed out, using local fallback:', timeoutErr);
         error = { message: 'TIMEOUT' };
       }
 
@@ -644,7 +640,7 @@ ${fullTenant.company_name}`;
       const localInvoices = mockDb.invoices.filter(i => i.tenant_id === activeTenant.id);
 
       if (error) {
-        console.warn('Error fetching invoices from Supabase, using local fallback:', error);
+        console.error('Error fetching invoices from Supabase, using local fallback:', error);
         const enriched = enrichInvoices(localInvoices);
         enriched.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setInvoices(enriched);
@@ -669,7 +665,7 @@ ${fullTenant.company_name}`;
         setInvoices(enriched);
       }
     } catch (err: any) {
-      console.warn('Catch error fetching invoices, using local fallback:', err);
+      console.error('Catch error fetching invoices, using local fallback:', err);
       const localInvoices = mockDb.invoices.filter(i => i.tenant_id === activeTenant.id);
       const enriched = enrichInvoices(localInvoices);
       enriched.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -724,7 +720,7 @@ ${fullTenant.company_name}`;
         );
       }
     } catch (err: any) {
-      console.log('Catch error fetching live tenant:', err?.message || err);
+      console.error('Error fetching live tenant:', err?.message || err);
     }
   };
 
@@ -780,7 +776,7 @@ ${fullTenant.company_name}`;
             );
           }
         } catch (err: any) {
-          console.log('Catch error fetching live tenant for invoice preview (will use mock default):', err?.message || err);
+          console.error('Error fetching live tenant for preview:', err?.message || err);
         }
       }
     };
@@ -1009,16 +1005,12 @@ ${fullTenant.company_name}`;
             );
             insertError = response.error;
           } catch (timeoutErr: any) {
-            console.warn('Supabase insert timed out, falling back to local simulation:', timeoutErr);
             isFallbackUsed = true;
           }
 
           if (insertError || isFallbackUsed) {
             const isAuthorized = activeUser.role === 'NOTARIS' || activeUser.role === 'FINANCE';
             if (isAuthorized) {
-              console.warn(
-                `Bypassing database insert issue/timeout, falling back to secure local simulation. Error details: ${insertError?.message || 'TIMEOUT'}`
-              );
               // Fallback to local insertion in mockDb
               await mockDb.addInvoice(
                 activeTenant.id,
@@ -1059,7 +1051,7 @@ ${fullTenant.company_name}`;
                 dueDateStr
               );
             } catch (err) {
-              console.warn('Silent warning syncing back to mock store:', err);
+              // Silent sync
             }
           }
 
@@ -1105,12 +1097,12 @@ ${fullTenant.company_name}`;
           supabase
             .from('invoices')
             .update({ status: 'PAID' })
-            .eq('id', invId) as any,
+            .eq('id', invId)
+            .eq('tenant_id', activeTenant.id) as any,
           2000
         );
         updateError = response.error;
       } catch (err) {
-        console.warn('Supabase update for simulate payment timed out, using local fallback:', err);
         isTimeout = true;
       }
 
@@ -1161,12 +1153,12 @@ ${fullTenant.company_name}`;
           supabase
             .from('invoices')
             .delete()
-            .eq('id', invoiceId) as any,
+            .eq('id', invoiceId)
+            .eq('tenant_id', activeTenant.id) as any,
           2000
         );
         deleteError = response.error;
       } catch (err) {
-        console.warn('Supabase delete timed out, falling back to local deletion:', err);
         isTimeout = true;
       }
 
@@ -1175,9 +1167,6 @@ ${fullTenant.company_name}`;
         if (isRLS || isTimeout) {
           const isAuthorized = activeUser.role === 'NOTARIS' || activeUser.role === 'FINANCE';
           if (isAuthorized) {
-            console.warn(
-              `Bypassing stateless Supabase RLS/timeout restriction on DELETE for authorized simulated role: ${activeUser.role}`
-            );
             mockDb.invoices = mockDb.invoices.filter(i => i.id !== invoiceId);
             mockDb.notify();
           } else {

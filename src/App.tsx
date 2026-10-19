@@ -159,8 +159,8 @@ export default function App() {
                     return;
                   }
                 }
-              } catch (parseErr) {
-                console.warn('Error verifying saved user session:', parseErr);
+              } catch {
+                // Ignore parse error
               }
             }
 
@@ -170,7 +170,7 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn('Error checking Supabase session on boot:', err);
+        console.error('Error checking Supabase session on boot:', err);
       } finally {
         if (isMounted) setIsAuthLoading(false);
       }
@@ -216,7 +216,7 @@ export default function App() {
         return;
       }
     } catch (err) {
-      console.warn('Profile sync error from users table:', err);
+      console.error('Profile sync error from users table:', err);
     }
 
     const matched = mockDb.users.find(
@@ -245,7 +245,7 @@ export default function App() {
       localStorage.removeItem('notaris_active_user');
       await supabase.auth.signOut();
     } catch (err) {
-      console.warn('Error during Supabase signOut:', err);
+      console.error('Error during Supabase signOut:', err);
     } finally {
       localStorage.removeItem('notaris_active_user');
       setLoggedInUser(null);

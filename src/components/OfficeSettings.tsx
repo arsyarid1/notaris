@@ -214,7 +214,7 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
             return;
           }
         } catch (bErr) {
-          console.warn("Error reading bank_accounts table, fallback to tenant JSON:", bErr);
+          console.error("Gagal memuat bank_accounts:", bErr);
         }
 
         // Fallback: Parse bank accounts safely from activeTenant / tenantData prop
@@ -234,7 +234,7 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
                 }));
               }
             } catch (e) {
-              console.warn("Failed to parse bank accounts JSON", e);
+              console.error("Gagal mengurai bank accounts JSON:", e);
             }
           }
           
@@ -250,7 +250,7 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
           setBankAccounts(loadedAccounts);
         }
       } catch (err) {
-        console.warn("Live SELECT tenant/bank_accounts error:", err);
+        console.error("Gagal memuat detail tenant dari Supabase:", err);
       }
     };
 
@@ -299,7 +299,7 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
         (newAcc as any).id = data.id;
       }
     } catch (err) {
-      console.warn("Error inserting bank account into 'bank_accounts' table:", err);
+      console.error("Error inserting bank account into 'bank_accounts' table:", err);
     }
 
     setBankAccounts(prev => [...prev, newAcc]);
@@ -313,9 +313,10 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
         await supabase
           .from('bank_accounts')
           .delete()
-          .eq('id', target.id);
+          .eq('id', target.id)
+          .eq('tenant_id', activeTenant.id);
       } catch (err) {
-        console.warn("Error deleting bank account from 'bank_accounts' table:", err);
+        console.error("Gagal menghapus rekening bank:", err);
       }
     }
 
@@ -369,7 +370,6 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
 
       // If full update failed (e.g. some optional columns don't exist in PostgreSQL), update core columns
       if (sbErr) {
-        console.warn('Supabase tenant full update error, trying core columns:', sbErr);
         const { error: coreErr } = await supabase
           .from('tenants')
           .update({
@@ -407,9 +407,10 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
             await supabase
               .from('bank_accounts')
               .update(bankPayload)
-              .eq('id', acc.id);
+              .eq('id', acc.id)
+              .eq('tenant_id', activeTenant.id);
           } catch (err) {
-            console.warn("Error updating bank_accounts row:", err);
+            console.error("Gagal memperbarui rekening bank:", err);
           }
         } else {
           try {
@@ -423,7 +424,7 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
               acc.id = createdRow.id;
             }
           } catch (err) {
-            console.warn("Error inserting bank_accounts row:", err);
+            console.error("Gagal menambahkan rekening bank:", err);
           }
         }
       }

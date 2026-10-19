@@ -97,7 +97,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             }
           }
         } catch (authErr) {
-          console.warn('Supabase Auth signIn error:', authErr);
+          // Fall through to database users table check
         }
 
         // 2. Profile matching fallback from Supabase table or local mockDb
@@ -116,7 +116,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               }
             }
           } catch (dbErr) {
-            console.warn('Error querying users table:', dbErr);
+            // Handled via user state check
           }
 
           if (!authenticatedUser) {
@@ -133,8 +133,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         if (authenticatedUser) {
           try {
             localStorage.setItem('notaris_active_user', JSON.stringify(authenticatedUser));
-          } catch (storageErr) {
-            console.warn('Storage active user error:', storageErr);
+          } catch {
+            // LocalStorage write error ignored
           }
           setSuccessMessage(`Selamat datang kembali, ${authenticatedUser.name}`);
           setTimeout(() => onLoginSuccess(authenticatedUser!), 600);
@@ -162,8 +162,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         try {
           localStorage.setItem('notaris_active_user', JSON.stringify(foundUser));
-        } catch (storageErr) {
-          console.warn('Storage active user error:', storageErr);
+        } catch {
+          // LocalStorage write error ignored
         }
         setSuccessMessage(`Masuk sukses! Selamat datang kembali, ${foundUser.name}`);
         setTimeout(() => onLoginSuccess(foundUser), 800);
@@ -184,8 +184,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     
     try {
       localStorage.setItem('notaris_active_user', JSON.stringify(user));
-    } catch (storageErr) {
-      console.warn('Storage active user error:', storageErr);
+    } catch {
+      // LocalStorage write error ignored
     }
 
     await new Promise(resolve => setTimeout(resolve, 300));

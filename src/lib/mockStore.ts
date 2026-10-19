@@ -168,7 +168,6 @@ class MockDatabaseStore {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'clients' },
           () => {
-            console.log('Realtime change detected on table clients');
             this.fetchAndSyncAll();
           }
         )
@@ -176,7 +175,6 @@ class MockDatabaseStore {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'orders' },
           () => {
-            console.log('Realtime change detected on table orders');
             this.fetchAndSyncAll();
           }
         )
@@ -184,7 +182,6 @@ class MockDatabaseStore {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'tasks' },
           () => {
-            console.log('Realtime change detected on table tasks');
             this.fetchAndSyncAll();
           }
         )
@@ -192,7 +189,6 @@ class MockDatabaseStore {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'invoices' },
           () => {
-            console.log('Realtime change detected on table invoices');
             this.fetchAndSyncAll();
           }
         )
@@ -200,15 +196,12 @@ class MockDatabaseStore {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'checklists' },
           () => {
-            console.log('Realtime change detected on table checklists');
             this.fetchAndSyncAll();
           }
         )
-        .subscribe((status: string) => {
-          console.log('Supabase Realtime subscription status:', status);
-        });
+        .subscribe();
     } catch (err) {
-      console.warn('Realtime subscription error:', err);
+      console.error('Realtime subscription error:', err);
     }
   }
 
@@ -221,52 +214,50 @@ class MockDatabaseStore {
     try {
       // 1. Fetch tenants
       const { data: dbTenants, error: errTenants } = await supabase.from('tenants').select('*');
-      if (errTenants) console.log('Info/Error fetching tenants (using local fallback if failed):', errTenants);
+      if (errTenants) console.error('Error fetching tenants:', errTenants);
       
       // Seed tenants if database is completely empty and accessible
       if (dbTenants && dbTenants.length === 0 && !errTenants) {
-        console.log('Database is empty of tenants. Attempting seed into Supabase...');
-        await this.seedDatabase().catch(err => console.warn('Seed tenants error:', err));
+        await this.seedDatabase().catch(err => console.error('Seed tenants error:', err));
       }
 
       // 2. Fetch users
       const { data: dbUsers, error: errUsers } = await supabase.from('users').select('*');
-      if (errUsers) console.log('Info/Error fetching users (using local fallback if failed):', errUsers);
+      if (errUsers) console.error('Error fetching users:', errUsers);
 
       // 3. Fetch clients
       const { data: dbClients, error: errClients } = await supabase.from('clients').select('*');
-      if (errClients) console.log('Info/Error fetching clients (using local fallback if failed):', errClients);
+      if (errClients) console.error('Error fetching clients:', errClients);
 
       // 4. Fetch orders
       const { data: dbOrders, error: errOrders } = await supabase.from('orders').select('*');
-      if (errOrders) console.log('Info/Error fetching orders (using local fallback if failed):', errOrders);
+      if (errOrders) console.error('Error fetching orders:', errOrders);
 
       // 5. Fetch tasks
       const { data: dbTasks, error: errTasks } = await supabase.from('tasks').select('*');
-      if (errTasks) console.log('Info/Error fetching tasks (using local fallback if failed):', errTasks);
+      if (errTasks) console.error('Error fetching tasks:', errTasks);
 
       // 6. Fetch checklists
       const { data: dbChecklists, error: errChecklists } = await supabase.from('checklists').select('*');
-      if (errChecklists) console.log('Info/Error fetching checklists (using local fallback if failed):', errChecklists);
+      if (errChecklists) console.error('Error fetching checklists:', errChecklists);
 
       // 7. Fetch announcements
       const { data: dbAnnouncements, error: errAnnouncements } = await supabase.from('announcements').select('*');
-      if (errAnnouncements) console.log('Info/Error fetching announcements (using local fallback if failed):', errAnnouncements);
+      if (errAnnouncements) console.error('Error fetching announcements:', errAnnouncements);
 
       // 8. Fetch invoices
       const { data: dbInvoices, error: errInvoices } = await supabase.from('invoices').select('*');
-      if (errInvoices) console.log('Info/Error fetching invoices (using local fallback if failed):', errInvoices);
+      if (errInvoices) console.error('Error fetching invoices:', errInvoices);
 
       // 9. Fetch audit logs
       const { data: dbAuditLogs, error: errAuditLogs } = await supabase.from('audit_logs').select('*');
-      if (errAuditLogs) console.log('Info/Error fetching audit logs (using local fallback if failed):', errAuditLogs);
+      if (errAuditLogs) console.error('Error fetching audit logs:', errAuditLogs);
 
       // 10. Fetch order_templates
       const { data: dbTemplates, error: errTemplates } = await supabase.from('order_templates').select('*');
       if (errTemplates) {
-        console.log('Info/Error fetching order_templates:', errTemplates);
+        console.error('Error fetching order_templates:', errTemplates);
       } else if (dbTemplates && dbTemplates.length === 0) {
-        console.log('order_templates in Supabase is empty. Auto-seeding default templates...');
         await this.seedOrderTemplatesToSupabase();
       }
 
@@ -432,14 +423,13 @@ class MockDatabaseStore {
 
       this.notify();
     } catch (err) {
-      console.log('Info/Error in fetchAndSyncAll:', err);
+      console.error('Error in fetchAndSyncAll:', err);
     }
   }
 
   // Seed default data if database is empty
   private async seedDatabase(): Promise<void> {
     try {
-      console.log('Seeding tenants...');
       try {
         await supabase.from('tenants').insert(
           MOCK_TENANTS.map(t => ({
@@ -456,10 +446,9 @@ class MockDatabaseStore {
           }))
         );
       } catch (e) {
-        console.warn('Tenant seed warning:', e);
+        // Fall through
       }
 
-      console.log('Seeding users...');
       try {
         await supabase.from('users').insert(
           MOCK_USERS.map(u => ({
@@ -473,10 +462,9 @@ class MockDatabaseStore {
           }))
         );
       } catch (e) {
-        console.warn('User seed warning:', e);
+        // Fall through
       }
 
-      console.log('Seeding clients...');
       try {
         await supabase.from('clients').upsert(
           MOCK_CLIENTS.map(c => {
@@ -492,10 +480,9 @@ class MockDatabaseStore {
           })
         );
       } catch (e) {
-        console.warn('Client seed warning:', e);
+        // Fall through
       }
 
-      console.log('Seeding orders...');
       await supabase.from('orders').insert(
         MOCK_ORDERS.map(o => ({
           id: o.id,
@@ -507,7 +494,6 @@ class MockDatabaseStore {
         }))
       );
 
-      console.log('Seeding tasks...');
       await supabase.from('tasks').insert(
         MOCK_TASKS.map(t => {
           const user = MOCK_USERS.find(u => u.name === t.assigned_to_user_name && u.tenant_id === t.tenant_id);
@@ -523,7 +509,6 @@ class MockDatabaseStore {
         })
       );
 
-      console.log('Seeding checklists...');
       await supabase.from('checklists').insert(
         MOCK_CHECKLISTS.map(chk => ({
           id: chk.id,
@@ -536,7 +521,6 @@ class MockDatabaseStore {
         }))
       );
 
-      console.log('Seeding announcements...');
       await supabase.from('announcements').insert(
         MOCK_ANNOUNCEMENTS.map(ann => {
           const user = MOCK_USERS.find(u => u.name === ann.created_by_name && u.tenant_id === ann.tenant_id);
@@ -552,7 +536,6 @@ class MockDatabaseStore {
         })
       );
 
-      console.log('Seeding invoices...');
       await supabase.from('invoices').insert(
         MOCK_INVOICES.map(inv => ({
           id: inv.id,
@@ -566,7 +549,6 @@ class MockDatabaseStore {
         }))
       );
 
-      console.log('Seeding audit logs...');
       await supabase.from('audit_logs').insert(
         MOCK_AUDIT_LOGS.map(log => {
           const user = MOCK_USERS.find(u => u.name === log.user_name && u.tenant_id === log.tenant_id);
@@ -581,10 +563,7 @@ class MockDatabaseStore {
         })
       );
 
-      console.log('Seeding order templates...');
       await this.seedOrderTemplatesToSupabase();
-
-      console.log('Mock database seeding completed successfully.');
     } catch (err) {
       console.error('Error during initial database seed:', err);
     }
@@ -671,7 +650,6 @@ class MockDatabaseStore {
       if (toInsert.length > 0) {
         const { error: insertErr } = await supabase.from('order_templates').upsert(toInsert);
         if (insertErr) {
-          console.warn("Mencoba ulang seed dengan kolom checklist_items:", insertErr);
           const fallbackPayload = toInsert.map(t => ({
             tenant_id: t.tenant_id,
             name: t.name,
@@ -701,12 +679,10 @@ class MockDatabaseStore {
         }
 
         if (duplicateIdsToDelete.length > 0) {
-          console.log(`Cleaning up ${duplicateIdsToDelete.length} duplicate templates from Supabase...`);
           await supabase.from('order_templates').delete().in('id', duplicateIdsToDelete);
         }
       }
 
-      console.log('Successfully seeded & cleaned order_templates in Supabase.');
       return { success: true, insertedCount: insertCount };
     } catch (e: any) {
       console.error('Error seeding order_templates to Supabase:', e);
@@ -1116,10 +1092,10 @@ class MockDatabaseStore {
         if (!error && data && data.length > 0) {
           supabaseResultData = data[0];
         } else if (error) {
-          console.warn('Sync insert ke Supabase:', error.message);
+          console.error('Sync insert ke Supabase error:', error.message);
         }
       } catch (authErr) {
-        console.warn('Verifikasi Supabase pada addClient:', authErr);
+        console.error('Verifikasi Supabase pada addClient:', authErr);
       }
     }
 
@@ -1176,12 +1152,16 @@ class MockDatabaseStore {
           phone: cleanPhone,
           assigned_to_user_id
         };
-        const { error } = await supabase.from('clients').update(payload).eq('id', clientId);
+        const { error } = await supabase
+          .from('clients')
+          .update(payload)
+          .eq('id', clientId)
+          .eq('tenant_id', tenantId);
         if (error) {
-          console.warn('Sync update ke Supabase:', error.message);
+          console.error('Sync update ke Supabase error:', error.message);
         }
       } catch (authErr) {
-        console.warn('Error saat updateClient ke Supabase:', authErr);
+        console.error('Error saat updateClient ke Supabase:', authErr);
       }
     }
 
@@ -1212,15 +1192,19 @@ class MockDatabaseStore {
     const index = this.clients.findIndex(c => c.id === clientId);
     const name = index !== -1 ? this.clients[index].name : 'Klien';
 
-    // Sync Hapus di Supabase Database
+    // Sync Hapus di Supabase Database with tenant_id isolation
     if (this.isSupabaseConfigured() && isValidUuid(clientId)) {
       try {
-        const { error } = await supabase.from('clients').delete().eq('id', clientId);
+        const { error } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', clientId)
+          .eq('tenant_id', tenantId);
         if (error) {
-          console.warn('Sync delete ke Supabase:', error.message);
+          console.error('Sync delete ke Supabase error:', error.message);
         }
       } catch (err) {
-        console.warn('Error deleteClient di Supabase:', err);
+        console.error('Error deleteClient di Supabase:', err);
       }
     }
 
@@ -1430,7 +1414,7 @@ class MockDatabaseStore {
 
         await this.fetchAndSyncAll();
       } catch (dbErr: any) {
-        console.warn('Supabase tenant update failed:', dbErr);
+        console.error('Supabase tenant update failed:', dbErr);
       } finally {
         this.notify();
       }
@@ -1591,7 +1575,6 @@ class MockDatabaseStore {
         });
 
         if (error) {
-          console.warn("Supabase insert order_templates with 'checklists' column error, attempting fallback column 'checklist_items':", error);
           await supabase.from('order_templates').insert({
             tenant_id: tenantId,
             name: name,
@@ -1600,7 +1583,7 @@ class MockDatabaseStore {
         }
         await this.fetchAndSyncAll();
       } catch (err) {
-        console.warn("Error inserting order_template into Supabase:", err);
+        console.error("Error inserting order_template into Supabase:", err);
       }
     } else {
       this.orderTemplates.push(newTmpl);
@@ -1625,17 +1608,21 @@ class MockDatabaseStore {
         const { error } = await supabase.from('order_templates').update({
           name: name,
           checklists: checklistItems
-        }).eq('id', tmplId);
+        })
+        .eq('id', tmplId)
+        .eq('tenant_id', tenantId);
 
         if (error) {
           await supabase.from('order_templates').update({
             name: name,
             checklist_items: checklistItems
-          }).eq('id', tmplId);
+          })
+          .eq('id', tmplId)
+          .eq('tenant_id', tenantId);
         }
         await this.fetchAndSyncAll();
       } catch (err) {
-        console.warn("Error updating order_template in Supabase:", err);
+        console.error("Error updating order_template in Supabase:", err);
       }
     } else {
       this.notify();
@@ -1652,10 +1639,13 @@ class MockDatabaseStore {
 
     if (this.isSupabaseConfigured()) {
       try {
-        await supabase.from('order_templates').delete().eq('id', tmplId);
+        await supabase.from('order_templates')
+          .delete()
+          .eq('id', tmplId)
+          .eq('tenant_id', tenantId);
         await this.fetchAndSyncAll();
       } catch (err) {
-        console.warn("Error deleting order_template from Supabase:", err);
+        console.error("Error deleting order_template from Supabase:", err);
       }
     } else {
       this.orderTemplates = this.orderTemplates.filter(t => t.id !== tmplId);

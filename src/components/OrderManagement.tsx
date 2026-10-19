@@ -87,9 +87,10 @@ export default function OrderManagement({ activeUser, activeTenant }: OrderManag
       try {
         const { data, error } = await supabase
           .from('order_templates')
-          .select('*');
+          .select('*')
+          .eq('tenant_id', activeTenant.id);
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           const mapped = data.map((t: any) => ({
             id: t.id,
             tenant_id: t.tenant_id,
@@ -101,10 +102,10 @@ export default function OrderManagement({ activeUser, activeTenant }: OrderManag
           return;
         }
       } catch (err) {
-        console.warn("Gagal mengambil live order_templates di OrderManagement:", err);
+        console.error("Gagal mengambil live order_templates di OrderManagement:", err);
       }
     }
-    setLiveTemplates(deduplicateTemplates(mockDb.orderTemplates));
+    setLiveTemplates([]);
   };
 
   useEffect(() => {
@@ -162,19 +163,23 @@ export default function OrderManagement({ activeUser, activeTenant }: OrderManag
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!newClientName.trim() || !newClientEmail.trim() || !newClientPhone.trim()) {
+    const cleanClientName = newClientName.trim().replace(/<[^>]*>?/gm, '');
+    const cleanClientEmail = newClientEmail.trim().replace(/<[^>]*>?/gm, '');
+    const cleanClientPhone = newClientPhone.trim().replace(/<[^>]*>?/gm, '');
+
+    if (!cleanClientName || !cleanClientEmail || !cleanClientPhone) {
       setErrorMessage('Semua field klien wajib diisi!');
       return;
     }
 
     try {
-      const assignedName = newClientAssignedTo || (employees[0]?.name || activeUser.name);
+      const assignedName = (newClientAssignedTo || (employees[0]?.name || activeUser.name)).replace(/<[^>]*>?/gm, '');
       
       const newClient = await mockDb.addClient(
         activeTenant.id,
-        newClientName.trim(),
-        newClientEmail.trim(),
-        newClientPhone.trim(),
+        cleanClientName,
+        cleanClientEmail,
+        cleanClientPhone,
         assignedName
       );
 

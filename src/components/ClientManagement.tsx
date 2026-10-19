@@ -70,8 +70,7 @@ export default function ClientManagement({ activeUser, activeTenant }: ClientMan
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'clients' },
-        (payload) => {
-          console.log('Realtime change on clients detected in ClientManagement:', payload);
+        () => {
           mockDb.fetchAndSyncAll();
         }
       )
@@ -157,10 +156,10 @@ export default function ClientManagement({ activeUser, activeTenant }: ClientMan
     setIsSubmitting(true);
 
     try {
-      const cleanName = formData.name.trim();
-      const cleanEmail = formData.email && formData.email.trim() !== '' ? formData.email.trim() : '';
-      const cleanPhone = formData.phone && formData.phone.trim() !== '' ? formData.phone.trim() : '';
-      const assignedTo = formData.assigned_to_user_name || activeUser?.name || 'Belum Ditugaskan';
+      const cleanName = formData.name.trim().replace(/<[^>]*>?/gm, '');
+      const cleanEmail = formData.email && formData.email.trim() !== '' ? formData.email.trim().replace(/<[^>]*>?/gm, '') : '';
+      const cleanPhone = formData.phone && formData.phone.trim() !== '' ? formData.phone.trim().replace(/<[^>]*>?/gm, '') : '';
+      const assignedTo = (formData.assigned_to_user_name || activeUser?.name || 'Belum Ditugaskan').replace(/<[^>]*>?/gm, '');
       const tenantId = activeTenant?.id || activeUser?.tenant_id || 'a0000000-0000-0000-0000-000000000001';
 
       if (editingClient) {
@@ -190,7 +189,7 @@ export default function ClientManagement({ activeUser, activeTenant }: ClientMan
         setTimeout(() => setIsAddOpen(false), 800);
       }
     } catch (err: any) {
-      console.warn('Notice saat memproses data klien:', err);
+      console.error('Error saat memproses data klien:', err);
       const errMsg = err.message || 'Terjadi kesalahan sistem saat menyimpan data klien.';
       setErrorMessage(errMsg);
       showToast('error', errMsg);
@@ -209,7 +208,7 @@ export default function ClientManagement({ activeUser, activeTenant }: ClientMan
       showToast('success', msg);
       setClientToDelete(null);
     } catch (err: any) {
-      console.warn('Gagal menghapus klien:', err);
+      console.error('Gagal menghapus klien:', err);
       const errMsg = err.message || 'Gagal menghapus data klien.';
       showToast('error', errMsg);
     } finally {

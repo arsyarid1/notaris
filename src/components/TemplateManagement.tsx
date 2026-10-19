@@ -8,13 +8,11 @@ import {
   Trash2, 
   X, 
   AlertCircle, 
-  CheckCircle2, 
-  ListPlus, 
-  ChevronRight,
-  Sparkles,
-  Layers,
-  Loader2,
-  RefreshCw
+  CheckCircle2,
+  ListPlus,
+  Sparkles, 
+  Layers, 
+  Loader2 
 } from 'lucide-react';
 import { mockDb, deduplicateTemplates } from '../lib/mockStore';
 import { User as UserType } from '../data/schemaData';
@@ -48,7 +46,7 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
   const [dbTemplates, setDbTemplates] = useState<any[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Live Fetch Templates from Supabase
+  // Live Fetch Templates from Supabase filtered by tenant_id
   const fetchLiveTemplates = async () => {
     setIsLoading(true);
     setFetchError(null);
@@ -56,7 +54,8 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
       if (mockDb.isSupabaseConfigured()) {
         const { data, error } = await supabase
           .from('order_templates')
-          .select('*');
+          .select('*')
+          .eq('tenant_id', activeTenant.id);
         
         if (error) {
           console.error("Gagal mengambil live templates dari Supabase:", error);
@@ -75,7 +74,7 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
         }
       }
     } catch (err: any) {
-      console.warn("Gagal mengambil live templates dari Supabase:", err);
+      console.error("Gagal mengambil live templates dari Supabase:", err);
       setFetchError(err?.message || 'Gagal tersambung ke database Supabase');
     } finally {
       setIsLoading(false);
@@ -94,12 +93,9 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
     return () => unsubscribe();
   }, []);
 
-  // Filtered templates: prioritize live dbTemplates from Supabase
+  // Filtered templates: prioritize live dbTemplates directly from Supabase
   const templates = useMemo(() => {
-    let list = dbTemplates.length > 0 
-      ? dbTemplates 
-      : (mockDb.isSupabaseConfigured() && fetchError ? [] : mockDb.orderTemplates);
-    
+    let list = dbTemplates;
     list = deduplicateTemplates(list);
 
     if (searchQuery.trim() !== '') {
@@ -107,7 +103,7 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
       list = list.filter(t => t.name.toLowerCase().includes(q));
     }
     return list;
-  }, [searchQuery, storeTick, dbTemplates, fetchError]);
+  }, [searchQuery, storeTick, dbTemplates]);
 
   // Open modal for create
   const handleOpenCreate = () => {
@@ -158,12 +154,16 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!templateName.trim()) {
+    const cleanName = templateName.trim().replace(/<[^>]*>?/gm, '');
+    const filteredItems = checklistItems
+      .map(item => item.trim().replace(/<[^>]*>?/gm, ''))
+      .filter(item => item !== '');
+
+    if (!cleanName) {
       setErrorMessage('Nama Jenis Order wajib diisi!');
       return;
     }
 
-    const filteredItems = checklistItems.map(item => item.trim()).filter(item => item !== '');
     if (filteredItems.length === 0) {
       setErrorMessage('Minimal isi satu butir checklist standar!');
       return;
@@ -176,45 +176,48 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
           const { error } = await supabase
             .from('order_templates')
             .update({
-              name: templateName.trim(),
+              name: cleanName,
               checklists: filteredItems
             })
-            .eq('id', editingTemplateId);
+            .eq('id', editingTemplateId)
+            .eq('tenant_id', activeTenant.id);
 
           if (error) {
             const { error: retryError } = await supabase
               .from('order_templates')
               .update({
-                name: templateName.trim(),
+                name: cleanName,
                 checklist_items: filteredItems
               })
-              .eq('id', editingTemplateId);
+              .eq('id', editingTemplateId)
+              .eq('tenant_id', activeTenant.id);
 
             if (retryError) {
+              console.error("Gagal update template Supabase:", retryError);
               throw new Error(`Gagal memperbarui ke database: ${retryError.message}`);
             }
           }
         } else {
-          // INSERT query to 'order_templates' table
+          // INSERT query to 'order_templates' table with strict tenant isolation
           const { error } = await supabase
             .from('order_templates')
             .insert({
               tenant_id: activeTenant.id,
-              name: templateName.trim(),
+              name: cleanName,
               checklists: filteredItems
             });
 
           if (error) {
-            console.warn("Error inserting with 'checklists', trying fallback 'checklist_items':", error);
             const { error: retryError } = await supabase
               .from('order_templates')
               .insert({
                 tenant_id: activeTenant.id,
-                name: templateName.trim(),
+                name: cleanName,
                 checklist_items: filteredItems
               });
 
             if (retryError) {
+              console.error("Gagal simpan template Supabase:", retryError);
               throw new Error(`Gagal menyimpan ke database: ${retryError.message}`);
             }
           }
@@ -225,7 +228,7 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
         await mockDb.updateOrderTemplate(
           activeTenant.id,
           editingTemplateId,
-          templateName.trim(),
+          cleanName,
           filteredItems,
           activeUser.name
         );
@@ -233,7 +236,7 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
       } else {
         await mockDb.addOrderTemplate(
           activeTenant.id,
-          templateName.trim(),
+          cleanName,
           filteredItems,
           activeUser.name
         );
@@ -259,31 +262,23 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
       return;
     }
     try {
+      if (mockDb.isSupabaseConfigured()) {
+        const { error } = await supabase
+          .from('order_templates')
+          .delete()
+          .eq('id', tmplId)
+          .eq('tenant_id', activeTenant.id);
+        if (error) {
+          console.error("Gagal menghapus template dari Supabase:", error);
+          alert(`Gagal menghapus template: ${error.message}`);
+          return;
+        }
+      }
       await mockDb.deleteOrderTemplate(activeTenant.id, tmplId, activeUser.name);
       await fetchLiveTemplates();
     } catch (err: any) {
+      console.error("Gagal menghapus template:", err);
       alert(err.message || 'Gagal menghapus template.');
-    }
-  };
-
-  // Handle Manual Seed/Sync Default Data to Supabase
-  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
-  const handleSeedToSupabase = async () => {
-    setIsSyncingSupabase(true);
-    try {
-      const res = await mockDb.seedOrderTemplatesToSupabase();
-      if (!res.success) {
-        console.error("Gagal menyuntikkan data template ke Supabase:", res.error);
-        alert(`Gagal menyuntik data ke database: ${res.error}`);
-        return;
-      }
-      await fetchLiveTemplates();
-      alert('Data template berhasil masuk ke Supabase!');
-    } catch (err: any) {
-      console.error("Gagal menyuntikkan data:", err);
-      alert('Gagal menyuntik data: ' + (err.message || err));
-    } finally {
-      setIsSyncingSupabase(false);
     }
   };
 
@@ -330,22 +325,6 @@ export default function TemplateManagement({ activeUser, activeTenant }: Templat
           </div>
           
           <div className="flex items-center gap-2.5">
-            {mockDb.isSupabaseConfigured() && (
-              <button
-                onClick={handleSeedToSupabase}
-                disabled={isSyncingSupabase}
-                title="Suntikkan data template standar bawaan ke database Supabase"
-                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-850 text-indigo-300 font-medium text-xs rounded-lg border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isSyncingSupabase ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                ) : (
-                  <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
-                )}
-                <span>Suntik Data ke Supabase</span>
-              </button>
-            )}
-
             <button
               onClick={handleOpenCreate}
               className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-medium text-xs rounded-lg shadow transition-all cursor-pointer"
