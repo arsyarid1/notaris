@@ -130,7 +130,13 @@ export default function App() {
 
     const checkInitialSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
+          setTimeout(() => resolve({ data: { session: null } }), 3500)
+        );
+        const { data: { session } } = await Promise.race([
+          supabase.auth.getSession(),
+          timeoutPromise
+        ]);
         if (isMounted) {
           if (session?.user) {
             await syncUserFromSession(session.user);
