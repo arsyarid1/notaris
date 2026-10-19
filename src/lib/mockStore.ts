@@ -126,49 +126,7 @@ class MockDatabaseStore {
   ];
 
   constructor() {
-    this.loadFromLocalStorage();
-  }
-
-  private loadFromLocalStorage() {
-    try {
-      const stored = localStorage.getItem('notaris_tenant_settings');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (typeof parsed === 'object' && parsed !== null) {
-          Object.keys(parsed).forEach(tenantId => {
-            const localTenant = this.tenants.find(t => t.id === tenantId);
-            if (localTenant) {
-              Object.assign(localTenant, parsed[tenantId]);
-            }
-          });
-        }
-      }
-    } catch (e) {
-      console.warn("Gagal memuat pengaturan dari localStorage", e);
-    }
-  }
-
-  private saveToLocalStorage() {
-    try {
-      const settingsMap: Record<string, Partial<Tenant>> = {};
-      this.tenants.forEach(t => {
-        settingsMap[t.id] = {
-          company_name: t.company_name,
-          address: t.address,
-          sk_menkumham: t.sk_menkumham,
-          logo_url: t.logo_url,
-          bank_name: t.bank_name,
-          bank_account: t.bank_account,
-          bank_account_name: t.bank_account_name,
-          mayar_api_key: t.mayar_api_key,
-          phone: t.phone,
-          email: t.email
-        };
-      });
-      localStorage.setItem('notaris_tenant_settings', JSON.stringify(settingsMap));
-    } catch (e) {
-      console.warn("Gagal menyimpan pengaturan ke localStorage", e);
-    }
+    // Pure Supabase PostgreSQL syncing - no local mock storage override
   }
 
   // Subscribe to changes in the database
@@ -312,36 +270,22 @@ class MockDatabaseStore {
         await this.seedOrderTemplatesToSupabase();
       }
 
-      // Populate local memory properties
-      if (dbTenants && dbTenants.length > 0) {
-        let localSettingsMap: Record<string, any> = {};
-        try {
-          const stored = localStorage.getItem('notaris_tenant_settings');
-          if (stored) localSettingsMap = JSON.parse(stored) || {};
-        } catch (e) {
-          console.warn('Failed to parse local tenant settings:', e);
-        }
-
-        this.tenants = dbTenants.map((t: any) => {
-          const existingTenant = this.tenants.find(lt => lt.id === t.id);
-          const savedLocal = localSettingsMap[t.id] || {};
-
-          return {
-            id: t.id,
-            company_name: savedLocal.company_name || t.company_name || t.name || existingTenant?.company_name || 'Kantor Notaris',
-            created_at: t.created_at || existingTenant?.created_at,
-            address: savedLocal.address !== undefined ? savedLocal.address : (t.address || existingTenant?.address || ''),
-            sk_menkumham: savedLocal.sk_menkumham !== undefined ? savedLocal.sk_menkumham : (t.sk_menkumham || existingTenant?.sk_menkumham || ''),
-            logo_url: savedLocal.logo_url !== undefined ? savedLocal.logo_url : (t.logo_url || existingTenant?.logo_url || ''),
-            bank_name: savedLocal.bank_name !== undefined ? savedLocal.bank_name : (t.bank_name || existingTenant?.bank_name || ''),
-            bank_account: savedLocal.bank_account !== undefined ? savedLocal.bank_account : (t.bank_account || existingTenant?.bank_account || ''),
-            bank_account_name: savedLocal.bank_account_name !== undefined ? savedLocal.bank_account_name : (t.bank_account_name || existingTenant?.bank_account_name || ''),
-            mayar_api_key: savedLocal.mayar_api_key !== undefined ? savedLocal.mayar_api_key : (t.mayar_api_key || existingTenant?.mayar_api_key || ''),
-            phone: savedLocal.phone !== undefined ? savedLocal.phone : (t.phone || existingTenant?.phone || ''),
-            email: savedLocal.email !== undefined ? savedLocal.email : (t.email || existingTenant?.email || '')
-          };
-        });
-        this.saveToLocalStorage();
+      // Populate local memory properties directly from PostgreSQL
+      if (Array.isArray(dbTenants) && dbTenants.length > 0) {
+        this.tenants = dbTenants.map((t: any) => ({
+          id: t.id,
+          company_name: t.company_name || t.name || 'Kantor Notaris',
+          created_at: t.created_at,
+          address: t.address || '',
+          sk_menkumham: t.sk_menkumham || '',
+          logo_url: t.logo_url || '',
+          bank_name: t.bank_name || '',
+          bank_account: t.bank_account || '',
+          bank_account_name: t.bank_account_name || '',
+          mayar_api_key: t.mayar_api_key || '',
+          phone: t.phone || '',
+          email: t.email || ''
+        }));
       }
 
       if (Array.isArray(dbUsers) && dbUsers.length > 0) {
@@ -1435,8 +1379,6 @@ class MockDatabaseStore {
       if (additionalSettings.email !== undefined) tenant.email = additionalSettings.email;
     }
 
-    this.saveToLocalStorage();
-
     if (this.isSupabaseConfigured()) {
       try {
         const updateData: any = {
@@ -1457,42 +1399,21 @@ class MockDatabaseStore {
           if (additionalSettings.email !== undefined) updateData.email = additionalSettings.email;
         }
 
-        const withTimeout = <T>(promise: any, timeoutMs: number = 2000): Promise<any> => {
-          return Promise.race([
-            promise,
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
-            )
-          ]);
-        };
-
-        const res = await withTimeout(
-          supabase.from('tenants').update(updateData).eq('id', tenantId),
-          2000
-        );
-        const updateError = res ? (res as any).error : null;
+        const { error: updateError } = await supabase.from('tenants').update(updateData).eq('id', tenantId);
 
         if (updateError) {
-          console.warn('Gagal menyimpan beberapa kolom ke database Supabase, menyimpan company_name saja. Detail error:', updateError);
-          // Try to update company_name only, which is guaranteed to exist in schema
-          await withTimeout(
-            supabase.from('tenants').update({ company_name: additionalSettings?.company_name || tenant.company_name }).eq('id', tenantId),
-            1000
-          ).catch(() => {});
+          try {
+            await supabase.from('tenants').update({ company_name: additionalSettings?.company_name || tenant.company_name }).eq('id', tenantId);
+          } catch {}
         }
 
-        this.saveToLocalStorage();
-        await withTimeout(this.fetchAndSyncAll(), 2000).catch(syncErr => {
-          console.warn('fetchAndSyncAll timed out/failed during settings update:', syncErr);
-        });
+        await this.fetchAndSyncAll();
       } catch (dbErr: any) {
-        console.warn('Supabase tenant update failed or timed out. Falling back to local store state:', dbErr);
+        console.warn('Supabase tenant update failed:', dbErr);
       } finally {
-        this.saveToLocalStorage();
         this.notify();
       }
     } else {
-      this.saveToLocalStorage();
       this.notify();
     }
 

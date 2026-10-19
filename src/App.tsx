@@ -58,10 +58,32 @@ import { mockDb } from './lib/mockStore';
 import { supabase } from './lib/supabase';
 
 export default function App() {
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('notaris_active_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(() => {
+    try {
+      return !localStorage.getItem('notaris_active_user');
+    } catch {
+      return true;
+    }
+  });
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tasks' | 'templates' | 'clients' | 'invoices' | 'employees' | 'settings' | 'sql' | 'erd' | 'simulator' | 'docs'>('dashboard');
-  const [selectedUserId, setSelectedUserId] = useState<string>(MOCK_USERS[0].id); // Sutra Oktaviani
+  const [selectedUserId, setSelectedUserId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('notaris_active_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u?.id) return u.id;
+      }
+    } catch {}
+    return MOCK_USERS[0].id;
+  });
   const [isLightMode, setIsLightMode] = useState(true); // Defaults to Light Mode!
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [storeTick, setStoreTick] = useState(0);
@@ -74,6 +96,9 @@ export default function App() {
   useEffect(() => {
     if (loggedInUser) {
       setSelectedUserId(loggedInUser.id);
+      try {
+        localStorage.setItem('notaris_active_user', JSON.stringify(loggedInUser));
+      } catch {}
     }
   }, [loggedInUser]);
 
@@ -83,6 +108,9 @@ export default function App() {
     const matchedUser = mockDb.users.find(u => u.id === selectedUserId);
     if (matchedUser && matchedUser.id !== loggedInUser?.id) {
       setLoggedInUser(matchedUser);
+      try {
+        localStorage.setItem('notaris_active_user', JSON.stringify(matchedUser));
+      } catch {}
     }
   }, [selectedUserId, loggedInUser]);
 
@@ -100,22 +128,45 @@ export default function App() {
     mockDb.setupRealtimeSubscriptions();
   }, []);
 
-  // Listen for real-time Supabase Auth session changes
+  // Listen for real-time Supabase Auth session changes with permanent browser persistence
   useEffect(() => {
     let isMounted = true;
 
     const checkInitialSession = async () => {
       try {
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
-          setTimeout(() => resolve({ data: { session: null } }), 2000)
-        );
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+        const { data: { session } } = await supabase.auth.getSession();
         if (isMounted) {
           if (session?.user) {
             await syncUserFromSession(session.user);
           } else {
-            setLoggedInUser(null);
+            // Verify from stored session if present
+            const savedStr = localStorage.getItem('notaris_active_user');
+            if (savedStr) {
+              try {
+                const savedUser = JSON.parse(savedStr);
+                if (savedUser?.id) {
+                  // Verify user from Supabase database
+                  const { data: dbUser } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', savedUser.id)
+                    .maybeSingle();
+
+                  if (dbUser && isMounted) {
+                    setLoggedInUser(dbUser as User);
+                    setSelectedUserId(dbUser.id);
+                    localStorage.setItem('notaris_active_user', JSON.stringify(dbUser));
+                    return;
+                  }
+                }
+              } catch (parseErr) {
+                console.warn('Error verifying saved user session:', parseErr);
+              }
+            }
+
+            if (!localStorage.getItem('notaris_active_user') && isMounted) {
+              setLoggedInUser(null);
+            }
           }
         }
       } catch (err) {
@@ -127,11 +178,12 @@ export default function App() {
 
     checkInitialSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (isMounted) {
         if (session?.user) {
           await syncUserFromSession(session.user);
-        } else {
+        } else if (event === 'SIGNED_OUT') {
+          localStorage.removeItem('notaris_active_user');
           setLoggedInUser(null);
         }
         setIsAuthLoading(false);
@@ -158,6 +210,9 @@ export default function App() {
       if (profile) {
         setLoggedInUser(profile as User);
         setSelectedUserId(profile.id);
+        try {
+          localStorage.setItem('notaris_active_user', JSON.stringify(profile));
+        } catch {}
         return;
       }
     } catch (err) {
@@ -172,19 +227,27 @@ export default function App() {
     if (matched) {
       setLoggedInUser(matched);
       setSelectedUserId(matched.id);
+      try {
+        localStorage.setItem('notaris_active_user', JSON.stringify(matched));
+      } catch {}
     } else {
       const fallback = mockDb.users[0] || MOCK_USERS[0];
       setLoggedInUser(fallback);
       setSelectedUserId(fallback.id);
+      try {
+        localStorage.setItem('notaris_active_user', JSON.stringify(fallback));
+      } catch {}
     }
   };
 
   const handleLogout = async () => {
     try {
+      localStorage.removeItem('notaris_active_user');
       await supabase.auth.signOut();
     } catch (err) {
       console.warn('Error during Supabase signOut:', err);
     } finally {
+      localStorage.removeItem('notaris_active_user');
       setLoggedInUser(null);
       setSelectedUserId('');
       setIsMobileMenuOpen(false);
@@ -251,7 +314,17 @@ export default function App() {
   }
 
   if (!loggedInUser) {
-    return <LoginPage onLoginSuccess={(user) => setLoggedInUser(user)} />;
+    return (
+      <LoginPage 
+        onLoginSuccess={(user) => {
+          setLoggedInUser(user);
+          setSelectedUserId(user.id);
+          try {
+            localStorage.setItem('notaris_active_user', JSON.stringify(user));
+          } catch {}
+        }} 
+      />
+    );
   }
 
   // Render sidebar navigation content for reuse in desktop & mobile drawer

@@ -131,6 +131,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         }
 
         if (authenticatedUser) {
+          try {
+            localStorage.setItem('notaris_active_user', JSON.stringify(authenticatedUser));
+          } catch (storageErr) {
+            console.warn('Storage active user error:', storageErr);
+          }
           setSuccessMessage(`Selamat datang kembali, ${authenticatedUser.name}`);
           setTimeout(() => onLoginSuccess(authenticatedUser!), 600);
           return;
@@ -155,6 +160,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           return;
         }
 
+        try {
+          localStorage.setItem('notaris_active_user', JSON.stringify(foundUser));
+        } catch (storageErr) {
+          console.warn('Storage active user error:', storageErr);
+        }
         setSuccessMessage(`Masuk sukses! Selamat datang kembali, ${foundUser.name}`);
         setTimeout(() => onLoginSuccess(foundUser), 800);
       }
@@ -172,6 +182,12 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setErrorMessage('');
     setSuccessMessage('');
     
+    try {
+      localStorage.setItem('notaris_active_user', JSON.stringify(user));
+    } catch (storageErr) {
+      console.warn('Storage active user error:', storageErr);
+    }
+
     await new Promise(resolve => setTimeout(resolve, 300));
     setSuccessMessage(`Mengalihkan sesi: ${user.name}`);
     setTimeout(() => {
