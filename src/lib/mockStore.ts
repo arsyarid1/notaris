@@ -191,7 +191,7 @@ class MockDatabaseStore {
 
   // Helper to check if Supabase is actually configured
   public isSupabaseConfigured(): boolean {
-    const url = (import.meta as any).env.VITE_SUPABASE_URL || 'https://fovnnhxhqfypiaiqxcif.supabase.co';
+    const url = (import.meta as any).env.VITE_SUPABASE_URL || 'https://notaris-db.arsyaridwan.com/';
     return !!url;
   }
 
