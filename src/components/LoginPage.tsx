@@ -72,8 +72,15 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             if (profile) {
               authenticatedUser = profile as UserType;
             } else {
-              const foundMock = mockDb.users.find(u => u.email === data.user.email);
-              if (foundMock) authenticatedUser = foundMock;
+              authenticatedUser = {
+                id: data.user.id,
+                tenant_id: (data.user.user_metadata?.tenant_id) || 'a0000000-0000-0000-0000-000000000001',
+                name: data.user.user_metadata?.full_name || data.user.email?.split('@')[0] || 'User',
+                username: data.user.email?.split('@')[0] || 'user',
+                email: data.user.email || '',
+                role: (data.user.user_metadata?.role as any) || 'NOTARIS',
+                password: ''
+              };
             }
           } else if (error && error.message.includes('Invalid login credentials')) {
             // Try signUp if user does not exist in Supabase Auth yet
@@ -89,10 +96,18 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 .eq('email', signUpData.user.email)
                 .maybeSingle();
 
-              if (profile) authenticatedUser = profile as UserType;
-              else {
-                const foundMock = mockDb.users.find(u => u.email === signUpData.user?.email);
-                if (foundMock) authenticatedUser = foundMock;
+              if (profile) {
+                authenticatedUser = profile as UserType;
+              } else {
+                authenticatedUser = {
+                  id: signUpData.user.id,
+                  tenant_id: (signUpData.user.user_metadata?.tenant_id) || 'a0000000-0000-0000-0000-000000000001',
+                  name: signUpData.user.user_metadata?.full_name || signUpData.user.email?.split('@')[0] || 'User',
+                  username: signUpData.user.email?.split('@')[0] || 'user',
+                  email: signUpData.user.email || '',
+                  role: (signUpData.user.user_metadata?.role as any) || 'NOTARIS',
+                  password: ''
+                };
               }
             }
           }
@@ -100,7 +115,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           // Fall through to database users table check
         }
 
-        // 2. Profile matching fallback from Supabase table or local mockDb
+        // 2. Profile matching from Supabase users table
         if (!authenticatedUser) {
           const cleanInput = emailOrUsername.trim().toLowerCase();
 
@@ -116,17 +131,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               }
             }
           } catch (dbErr) {
-            // Handled via user state check
-          }
-
-          if (!authenticatedUser) {
-            const foundMock = mockDb.users.find(u => 
-              u.username.toLowerCase() === cleanInput || 
-              (u.email && u.email.toLowerCase() === cleanInput)
-            );
-            if (foundMock) {
-              authenticatedUser = foundMock;
-            }
+            console.error('Error fetching db users in login:', dbErr);
           }
         }
 

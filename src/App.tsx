@@ -56,59 +56,15 @@ import TemplateManagement from './components/TemplateManagement';
 import OfficeSettings from './components/OfficeSettings';
 import { mockDb } from './lib/mockStore';
 import { supabase } from './lib/supabase';
+import { useAuth } from './context/AuthContext.tsx';
 
 export default function App() {
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(() => {
-    try {
-      const saved = localStorage.getItem('notaris_active_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const { user, loading, signOut, setUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tasks' | 'templates' | 'clients' | 'invoices' | 'employees' | 'settings' | 'sql' | 'erd' | 'simulator' | 'docs'>('dashboard');
-  const [selectedUserId, setSelectedUserId] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('notaris_active_user');
-      if (saved) {
-        const u = JSON.parse(saved);
-        if (u?.id) return u.id;
-      }
-    } catch {}
-    return '';
-  });
   const [isLightMode, setIsLightMode] = useState(true); // Defaults to Light Mode!
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [storeTick, setStoreTick] = useState(0);
-
-  // Find active tenant & user details based on current selection
-  const activeUser = loggedInUser || (selectedUserId ? (mockDb.users.find(u => u.id === selectedUserId) as User) : null) || mockDb.users[0];
-  const activeTenant = (activeUser && mockDb.tenants.find(t => t.id === activeUser.tenant_id)) || mockDb.tenants[0];
-
-  // Sync selectedUserId with loggedInUser when loggedInUser changes
-  useEffect(() => {
-    if (loggedInUser) {
-      setSelectedUserId(loggedInUser.id);
-      try {
-        localStorage.setItem('notaris_active_user', JSON.stringify(loggedInUser));
-      } catch {}
-    } else {
-      setSelectedUserId('');
-    }
-  }, [loggedInUser]);
-
-  // Keep loggedInUser in sync if simulated user is switched in the dropdown
-  useEffect(() => {
-    if (!loggedInUser || !selectedUserId) return;
-    const matchedUser = mockDb.users.find(u => u.id === selectedUserId);
-    if (matchedUser && matchedUser.id !== loggedInUser.id) {
-      setLoggedInUser(matchedUser);
-      try {
-        localStorage.setItem('notaris_active_user', JSON.stringify(matchedUser));
-      } catch {}
-    }
-  }, [selectedUserId, loggedInUser]);
+  const [simulatedUserId, setSimulatedUserId] = useState<string>('b0000000-0000-0000-0000-000000000001');
 
   // Subscribe to reactive database changes
   useEffect(() => {
@@ -124,156 +80,35 @@ export default function App() {
     mockDb.setupRealtimeSubscriptions();
   }, []);
 
-  // Listen for real-time Supabase Auth session changes with permanent browser persistence
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkInitialSession = async () => {
-      try {
-        const timeoutPromise = new Promise<{ data: { session: null } }>((resolve) =>
-          setTimeout(() => resolve({ data: { session: null } }), 3500)
-        );
-        const { data: { session } } = await Promise.race([
-          supabase.auth.getSession(),
-          timeoutPromise
-        ]);
-        if (isMounted) {
-          if (session?.user) {
-            await syncUserFromSession(session.user);
-          } else {
-            // No active session: state user mutlak bernilai null
-            localStorage.removeItem('notaris_active_user');
-            setLoggedInUser(null);
-            setSelectedUserId('');
-            if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-              window.history.replaceState(null, '', '/login');
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error checking Supabase session on boot:', err);
-        if (isMounted) {
-          localStorage.removeItem('notaris_active_user');
-          setLoggedInUser(null);
-          setSelectedUserId('');
-          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-            window.history.replaceState(null, '', '/login');
-          }
-        }
-      } finally {
-        if (isMounted) setIsAuthLoading(false);
-      }
-    };
-
-    checkInitialSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (isMounted) {
-        if (session?.user) {
-          await syncUserFromSession(session.user);
-        } else if (event === 'SIGNED_OUT' || !session) {
-          localStorage.removeItem('notaris_active_user');
-          setLoggedInUser(null);
-          setSelectedUserId('');
-          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-            window.history.replaceState(null, '', '/login');
-          }
-        }
-        setIsAuthLoading(false);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription?.unsubscribe();
-    };
-  }, []);
-
-  const syncUserFromSession = async (authUser: any) => {
-    const email = authUser?.email;
-    if (!email) {
-      setLoggedInUser(null);
-      setSelectedUserId('');
-      localStorage.removeItem('notaris_active_user');
-      return;
-    }
-
-    try {
-      const { data: profile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .maybeSingle();
-
-      if (profile) {
-        setLoggedInUser(profile as User);
-        setSelectedUserId(profile.id);
-        try {
-          localStorage.setItem('notaris_active_user', JSON.stringify(profile));
-        } catch {}
-        return;
-      }
-    } catch (err) {
-      console.error('Profile sync error from users table:', err);
-    }
-
-    const cleanPrefix = email.split('@')[0].toLowerCase();
-    try {
-      const { data: dbUserByUsername } = await supabase
-        .from('users')
-        .select('*')
-        .ilike('username', cleanPrefix)
-        .maybeSingle();
-
-      if (dbUserByUsername) {
-        setLoggedInUser(dbUserByUsername as User);
-        setSelectedUserId(dbUserByUsername.id);
-        try {
-          localStorage.setItem('notaris_active_user', JSON.stringify(dbUserByUsername));
-        } catch {}
-        return;
-      }
-    } catch (err) {
-      console.error('Profile sync error by username from users table:', err);
-    }
-
-    // No valid profile found: do not fall back to dummy mock users! User must be null.
-    setLoggedInUser(null);
-    setSelectedUserId('');
-    localStorage.removeItem('notaris_active_user');
+  const DEFAULT_TENANT: Tenant = {
+    id: 'a0000000-0000-0000-0000-000000000001',
+    company_name: 'Kantor Notaris',
+    created_at: new Date().toISOString(),
+    address: 'Indonesia',
+    sk_menkumham: '',
+    logo_url: '',
+    bank_name: '',
+    bank_account: '',
+    bank_account_name: '',
+    mayar_api_key: '',
+    phone: '',
+    email: ''
   };
 
-  const handleLogout = async () => {
-    try {
-      // 1. Purge all localStorage keys related to auth and user
-      try {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.startsWith('sb-') || key.includes('auth-token') || key === 'notaris_active_user')) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-      } catch (storageErr) {
-        console.error('Error clearing auth tokens from localStorage:', storageErr);
-      }
+  const activeUser: User = user || {
+    id: 'b0000000-0000-0000-0000-000000000001',
+    tenant_id: 'a0000000-0000-0000-0000-000000000001',
+    username: 'user',
+    name: 'Pengguna',
+    role: 'NOTARIS',
+    email: '',
+    password: ''
+  };
 
-      // 2. Perform Supabase signOut with local scope
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch (err) {
-      console.error('Error during Supabase signOut:', err);
-    } finally {
-      try {
-        localStorage.removeItem('notaris_active_user');
-      } catch {}
-      setLoggedInUser(null);
-      setSelectedUserId('');
-      setIsMobileMenuOpen(false);
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        window.history.replaceState(null, '', '/login');
-      }
-    }
+  const activeTenant: Tenant = (user?.tenant_id ? mockDb.tenants.find(t => t.id === user.tenant_id) : null) || mockDb.tenants[0] || DEFAULT_TENANT;
+
+  const handleLogout = async () => {
+    await signOut();
   };
 
   // Inject or remove 'light' class on html element
@@ -326,27 +161,23 @@ export default function App() {
     return isCorrectTenant && isRoleEligible;
   });
 
-  if (isAuthLoading) {
+  if (loading) {
     return (
       <div id="auth-loading-screen" className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 font-sans text-slate-100">
         <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-4" />
-        <span className="text-sm font-medium text-slate-300">Memverifikasi Sesi Keamanan Supabase...</span>
+        <span className="text-sm font-medium text-slate-300">Memuat data pengguna...</span>
       </div>
     );
   }
 
-  if (!loggedInUser) {
+  if (!user) {
     if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
       window.history.replaceState(null, '', '/login');
     }
     return (
       <LoginPage 
-        onLoginSuccess={(user) => {
-          setLoggedInUser(user);
-          setSelectedUserId(user.id);
-          try {
-            localStorage.setItem('notaris_active_user', JSON.stringify(user));
-          } catch {}
+        onLoginSuccess={(loggedIn) => {
+          setUser(loggedIn);
           if (typeof window !== 'undefined' && window.location.pathname === '/login') {
             window.history.replaceState(null, '', '/');
           }
@@ -550,32 +381,12 @@ export default function App() {
 
       </div>
 
-      {/* Dynamic Context Selection Profile at Sidebar Bottom */}
-      <div className="p-4 bg-slate-950 border-t border-slate-800/80 space-y-3">
-        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block leading-none font-mono">
-          Ganti Sesi Pengguna
-        </span>
-        
-        <div className="space-y-2">
-          <select
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            className="w-full px-2 py-1.5 bg-slate-850 hover:bg-slate-800 border border-slate-750 rounded text-slate-200 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors cursor-pointer font-sans"
-          >
-            {mockDb.users.map((user) => {
-              return (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({user.role})
-                </option>
-              );
-            })}
-          </select>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/40">
+      {/* Active User Profile at Sidebar Bottom */}
+      <div className="p-4 bg-slate-950 border-t border-slate-800/80">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-7 h-7 rounded-full bg-slate-850 border border-slate-750 flex items-center justify-center text-indigo-400 font-mono font-bold text-xs select-none uppercase shrink-0">
-              {activeUser.name.charAt(0)}
+              {(activeUser.name || 'U').charAt(0)}
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-xs font-semibold text-slate-200 block truncate" title={activeUser.name}>
@@ -793,7 +604,7 @@ export default function App() {
                   {activeTab === 'sql' && <SqlViewer />}
                   {activeTab === 'erd' && <ErdVisualizer />}
                   {activeTab === 'simulator' && (
-                    <RlsSimulator selectedUserId={selectedUserId} setSelectedUserId={setSelectedUserId} />
+                    <RlsSimulator selectedUserId={simulatedUserId} setSelectedUserId={setSimulatedUserId} />
                   )}
                   {activeTab === 'docs' && <SchemaDocumentation />}
                 </motion.div>

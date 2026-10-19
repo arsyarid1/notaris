@@ -50,80 +50,19 @@ const isValidUuid = (val: string | null | undefined): boolean => {
 class MockDatabaseStore {
   private listeners: Set<() => void> = new Set();
 
-  public tenants: Tenant[] = [...MOCK_TENANTS];
-  public orders: Order[] = [...MOCK_ORDERS];
-  public tasks: Task[] = [...MOCK_TASKS];
-  public checklists: ChecklistItem[] = [...MOCK_CHECKLISTS];
-  public documents: DocumentItem[] = [...MOCK_DOCUMENTS];
-  public comments: DocumentComment[] = [...MOCK_DOCUMENT_COMMENTS];
-  public appointments: Appointment[] = [...MOCK_APPOINTMENTS];
-  public users: User[] = [...MOCK_USERS];
-  public announcements: Announcement[] = [...MOCK_ANNOUNCEMENTS];
-  public auditLogs: AuditLog[] = [...MOCK_AUDIT_LOGS];
-  public clients: Client[] = [...MOCK_CLIENTS];
-  public invoices: Invoice[] = [...MOCK_INVOICES];
-  public orderTemplates: { id: string; tenant_id: string; name: string; checklists?: string[]; checklist_items: string[] }[] = [
-    // Tenant 1 (Sutra Oktaviani)
-    {
-      id: 'tmpl-pt-1',
-      tenant_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Akta Pendirian PT',
-      checklist_items: [
-        'Pengecekan nama PT di portal Kemenkumham',
-        'Pembayaran biaya PNBP cek nama',
-        'Identitas lengkap KTP para pendiri',
-        'Input data modal dasar & ditempatkan',
-        'NPWP para pemegang saham'
-      ]
-    },
-    {
-      id: 'tmpl-ajb-1',
-      tenant_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Akta Jual Beli (AJB)',
-      checklist_items: [
-        'Pemeriksaan Sertifikat Tanah asli di BPN',
-        'Pengecekan Pajak Bumi dan Bangunan (PBB) lunas',
-        'Validasi identitas penjual & pembeli (KTP/KK)',
-        'Pembayaran BPHTB pembeli & PPh penjual',
-        'Pembuatan draf Akta Jual Beli'
-      ]
-    },
-    {
-      id: 'tmpl-waris-1',
-      tenant_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Keterangan Waris & Pembagian Hak',
-      checklist_items: [
-        'Surat Kematian Pewaris',
-        'Surat Keterangan Waris dari RT/RW/Kecamatan',
-        'Fotokopi KTP & KK seluruh ahli waris',
-        'Penyusunan Akta Pembagian Hak Bersama (APHB)',
-        'Sertifikat Tanah yang akan dibagi'
-      ]
-    },
-    {
-      id: 'tmpl-cv-1',
-      tenant_id: 'a0000000-0000-0000-0000-000000000001',
-      name: 'Akta Pendirian CV',
-      checklist_items: [
-        'Verifikasi KTP para sekutu aktif & pasif',
-        'Input porsi modal CV',
-        'Pengecekan nama CV di Sistem Administrasi',
-        'Pengesahan Kemenkumham'
-      ]
-    },
-    // Tenant 2 (Maria Siregar)
-    {
-      id: 'tmpl-cv-2',
-      tenant_id: 'a0000000-0000-0000-0000-000000000002',
-      name: 'Akta Pendirian CV',
-      checklist_items: [
-        'Verifikasi KTP para sekutu aktif & pasif',
-        'Input porsi modal CV',
-        'Pengecekan nama CV di Sistem Administrasi',
-        'Pengesahan Kemenkumham'
-      ]
-    }
-  ];
+  public tenants: Tenant[] = [];
+  public orders: Order[] = [];
+  public tasks: Task[] = [];
+  public checklists: ChecklistItem[] = [];
+  public documents: DocumentItem[] = [];
+  public comments: DocumentComment[] = [];
+  public appointments: Appointment[] = [];
+  public users: User[] = [];
+  public announcements: Announcement[] = [];
+  public auditLogs: AuditLog[] = [];
+  public clients: Client[] = [];
+  public invoices: Invoice[] = [];
+  public orderTemplates: { id: string; tenant_id: string; name: string; checklists?: string[]; checklist_items: string[] }[] = [];
 
   constructor() {
     // Pure Supabase PostgreSQL syncing - no local mock storage override
@@ -217,11 +156,6 @@ class MockDatabaseStore {
       // 1. Fetch tenants
       const { data: dbTenants, error: errTenants } = await supabase.from('tenants').select('*');
       if (errTenants) console.error('Error fetching tenants:', errTenants);
-      
-      // Seed tenants if database is completely empty and accessible
-      if (dbTenants && dbTenants.length === 0 && !errTenants) {
-        await this.seedDatabase().catch(err => console.error('Seed tenants error:', err));
-      }
 
       // 2. Fetch users
       const { data: dbUsers, error: errUsers } = await supabase.from('users').select('*');
@@ -257,14 +191,10 @@ class MockDatabaseStore {
 
       // 10. Fetch order_templates
       const { data: dbTemplates, error: errTemplates } = await supabase.from('order_templates').select('*');
-      if (errTemplates) {
-        console.error('Error fetching order_templates:', errTemplates);
-      } else if (dbTemplates && dbTemplates.length === 0) {
-        await this.seedOrderTemplatesToSupabase();
-      }
+      if (errTemplates) console.error('Error fetching order_templates:', errTemplates);
 
       // Populate local memory properties directly from PostgreSQL
-      if (Array.isArray(dbTenants) && dbTenants.length > 0) {
+      if (Array.isArray(dbTenants)) {
         this.tenants = dbTenants.map((t: any) => ({
           id: t.id,
           company_name: t.company_name || t.name || 'Kantor Notaris',
@@ -281,7 +211,7 @@ class MockDatabaseStore {
         }));
       }
 
-      if (Array.isArray(dbUsers) && dbUsers.length > 0) {
+      if (Array.isArray(dbUsers)) {
         this.users = dbUsers.map((u: any) => ({
           id: u.id,
           tenant_id: u.tenant_id,
@@ -339,7 +269,7 @@ class MockDatabaseStore {
         });
       }
 
-      if (dbChecklists && dbChecklists.length > 0) {
+      if (Array.isArray(dbChecklists)) {
         this.checklists = dbChecklists.map((chk: any) => {
           const user = this.users.find(u => u.id === chk.checked_by_user_id);
           return {
@@ -355,7 +285,7 @@ class MockDatabaseStore {
         });
       }
 
-      if (dbAnnouncements && dbAnnouncements.length > 0) {
+      if (Array.isArray(dbAnnouncements)) {
         this.announcements = dbAnnouncements.map((ann: any) => {
           const user = this.users.find(u => u.id === ann.created_by);
           return {
@@ -370,7 +300,7 @@ class MockDatabaseStore {
         });
       }
 
-      if (dbInvoices && dbInvoices.length > 0) {
+      if (Array.isArray(dbInvoices)) {
         this.invoices = dbInvoices.map((inv: any) => {
           const order = this.orders.find(o => o.id === inv.order_id);
           return {
@@ -391,7 +321,7 @@ class MockDatabaseStore {
         });
       }
 
-      if (dbAuditLogs && dbAuditLogs.length > 0) {
+      if (Array.isArray(dbAuditLogs)) {
         this.auditLogs = dbAuditLogs.map((log: any) => {
           const user = this.users.find(u => u.id === log.user_id);
           return {
@@ -405,7 +335,7 @@ class MockDatabaseStore {
         });
       }
 
-      if (dbTemplates && dbTemplates.length > 0) {
+      if (Array.isArray(dbTemplates)) {
         const mapped = dbTemplates.map((tmpl: any) => {
           const items = Array.isArray(tmpl.checklists) 
             ? tmpl.checklists 
@@ -419,8 +349,6 @@ class MockDatabaseStore {
           };
         });
         this.orderTemplates = deduplicateTemplates(mapped);
-      } else {
-        this.orderTemplates = deduplicateTemplates(this.orderTemplates);
       }
 
       this.notify();
