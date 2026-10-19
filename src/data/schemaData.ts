@@ -371,11 +371,31 @@ CREATE TYPE target_role_type AS ENUM ('ALL', 'FINANCE', 'STAFF');
 -- ==============================================================================
 
 -- 1. TABEL TENANTS (Kantor Notaris Utama)
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_name VARCHAR(255) NOT NULL,
+    address TEXT,
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    sk_menkumham VARCHAR(100),
+    logo_url TEXT,
+    mayar_api_key TEXT,
+    bank_name VARCHAR(100),
+    bank_account TEXT,
+    bank_account_name VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+-- Migrasi kolom tenants jika tabel dibuat dengan skema minimal sebelumnya:
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS sk_menkumham VARCHAR(100);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS mayar_api_key TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS bank_account TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS bank_account_name VARCHAR(255);
 
 -- 2. TABEL USERS (Karyawan & Otoritas)
 CREATE TABLE users (
@@ -907,7 +927,7 @@ export const MOCK_TENANTS: Tenant[] = [
     id: 'a0000000-0000-0000-0000-000000000001', 
     company_name: 'Kantor Notaris Sutra Oktaviani, S.H., M.Kn.', 
     created_at: '2026-01-10T08:00:00Z',
-    address: 'Ruko Sentra Niaga Blok C No. 24, Kuningan, Jakarta Selatan',
+    address: '',
     sk_menkumham: 'AHU-00922.AH.02.01',
     logo_url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=120&h=120&q=80',
     bank_name: 'Bank Central Asia (BCA)',
@@ -918,7 +938,7 @@ export const MOCK_TENANTS: Tenant[] = [
     id: 'a0000000-0000-0000-0000-000000000002', 
     company_name: 'Notaris & PPAT Maria Siregar, S.H.', 
     created_at: '2026-02-15T09:30:00Z',
-    address: 'Jl. Jenderal Sudirman Kav. 21, Karet Tengsin, Jakarta Pusat',
+    address: '',
     sk_menkumham: '', // Empty on purpose to trigger the admin warning requirement!
     logo_url: '',
     bank_name: 'Bank Mandiri',

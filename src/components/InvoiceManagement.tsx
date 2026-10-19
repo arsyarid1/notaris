@@ -151,7 +151,7 @@ export default function InvoiceManagement({ activeUser, activeTenant }: InvoiceM
     const merged = { ...local };
     if (liveTenant) {
       Object.keys(liveTenant).forEach(key => {
-        if (liveTenant[key] !== undefined && liveTenant[key] !== null && liveTenant[key] !== '') {
+        if (liveTenant[key] !== undefined && liveTenant[key] !== null) {
           (merged as any)[key] = liveTenant[key];
         }
       });
@@ -681,23 +681,36 @@ ${fullTenant.company_name}`;
 
   const fetchTenantDetails = async () => {
     try {
-      const { data, error } = await supabase
-        .from('tenants')
-        .select('*')
-        .eq('id', activeTenant.id)
-        .single();
+      let tenantData: any = null;
+      const targetId = activeTenant?.id || activeUser?.tenant_id;
+      if (targetId) {
+        const { data } = await supabase
+          .from('tenants')
+          .select('*')
+          .eq('id', targetId)
+          .maybeSingle();
+        if (data) tenantData = data;
+      }
 
-      if (error) {
-        console.log('Live tenant not found in Supabase (will use mock default):', error.message);
-      } else if (data) {
-        setLiveTenant(data);
+      if (!tenantData) {
+        const { data } = await supabase
+          .from('tenants')
+          .select('*')
+          .limit(1)
+          .maybeSingle();
+        if (data) tenantData = data;
+      }
+
+      if (tenantData) {
+        setLiveTenant(tenantData);
       }
 
       // Query bank_accounts table
+      const bankTenantId = tenantData?.id || activeTenant?.id || activeUser?.tenant_id;
       const { data: bankData } = await supabase
         .from('bank_accounts')
         .select('*')
-        .eq('tenant_id', activeTenant.id)
+        .eq('tenant_id', bankTenantId)
         .order('created_at', { ascending: true });
 
       if (bankData && bankData.length > 0) {
@@ -711,7 +724,7 @@ ${fullTenant.company_name}`;
         );
       }
     } catch (err: any) {
-      console.log('Catch error fetching live tenant (will use mock default):', err?.message || err);
+      console.log('Catch error fetching live tenant:', err?.message || err);
     }
   };
 
@@ -726,15 +739,27 @@ ${fullTenant.company_name}`;
     const fetchTenantForPreview = async () => {
       if (selectedPreviewInvoice) {
         try {
-          const { data: tenant, error } = await supabase
-            .from('tenants')
-            .select('*')
-            .eq('id', activeUser.tenant_id || activeTenant.id)
-            .single();
+          let tenant: any = null;
+          const tenantIdToTry = selectedPreviewInvoice.tenant_id || activeUser.tenant_id || activeTenant.id;
+          if (tenantIdToTry) {
+            const { data } = await supabase
+              .from('tenants')
+              .select('*')
+              .eq('id', tenantIdToTry)
+              .maybeSingle();
+            if (data) tenant = data;
+          }
 
-          if (error) {
-            console.log('Live tenant preview not found in Supabase (will use mock default):', error.message);
-          } else if (tenant) {
+          if (!tenant) {
+            const { data } = await supabase
+              .from('tenants')
+              .select('*')
+              .limit(1)
+              .maybeSingle();
+            if (data) tenant = data;
+          }
+
+          if (tenant) {
             setLiveTenant(tenant);
           }
 

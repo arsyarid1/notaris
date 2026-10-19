@@ -1363,8 +1363,8 @@ class MockDatabaseStore {
     }
   ): Promise<Tenant> {
     await this.delay(200);
-    const tenant = this.tenants.find(t => t.id === tenantId);
-    if (!tenant) throw new Error(`Tenant tidak ditemukan`);
+    const tenant = this.tenants.find(t => t.id === tenantId) || this.tenants[0];
+    if (!tenant) return {} as Tenant;
     
     tenant.mayar_api_key = mayarApiKey;
     if (additionalSettings) {
@@ -1399,11 +1399,16 @@ class MockDatabaseStore {
           if (additionalSettings.email !== undefined) updateData.email = additionalSettings.email;
         }
 
-        const { error: updateError } = await supabase.from('tenants').update(updateData).eq('id', tenantId);
+        const effectiveId = tenant.id || tenantId;
+        const { error: updateError } = await supabase.from('tenants').update(updateData).eq('id', effectiveId);
 
         if (updateError) {
           try {
-            await supabase.from('tenants').update({ company_name: additionalSettings?.company_name || tenant.company_name }).eq('id', tenantId);
+            await supabase.from('tenants').update({ 
+              company_name: additionalSettings?.company_name || tenant.company_name,
+              name: additionalSettings?.company_name || tenant.company_name,
+              address: additionalSettings?.address !== undefined ? additionalSettings.address : tenant.address
+            }).eq('id', effectiveId);
           } catch {}
         }
 

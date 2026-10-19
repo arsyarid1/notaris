@@ -63,6 +63,7 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
   const [logoUrl, setLogoUrl] = useState(() => getValidLogoUrl(activeTenant.logo_url));
   const [bankAccounts, setBankAccounts] = useState<{ id?: string; bank_name: string; bank_account: string; bank_account_name: string; is_primary?: boolean }[]>(DEFAULT_BANK_ACCOUNTS);
 
+  const [dbTenantId, setDbTenantId] = useState<string>(activeTenant?.id || '');
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -152,20 +153,43 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
     let isMounted = true;
     const fetchTenantAndBanksLive = async () => {
       try {
-        // 1. Fetch Tenant data from 'tenants' table
-        const { data: tenantData, error: tenantErr } = await supabase
-          .from('tenants')
-          .select('*')
-          .eq('id', activeTenant.id)
-          .single();
+        // 1. Fetch Tenant data from 'tenants' table directly
+        let tenantData: any = null;
+        if (activeTenant?.id) {
+          const { data } = await supabase
+            .from('tenants')
+            .select('*')
+            .eq('id', activeTenant.id)
+            .maybeSingle();
+          if (data) tenantData = data;
+        }
 
-        if (isMounted && tenantData && !tenantErr) {
-          if (tenantData.name || tenantData.company_name) setCompanyName(tenantData.name || tenantData.company_name);
-          if (tenantData.phone) setPhone(tenantData.phone || '');
-          if (tenantData.email) setEmail(tenantData.email || '');
-          if (tenantData.mayar_api_key) setMayarApiKey(tenantData.mayar_api_key || '');
-          if (tenantData.address) setAddress(tenantData.address || '');
-          if (tenantData.sk_menkumham) setSkMenkumham(tenantData.sk_menkumham || '');
+        if (!tenantData && activeUser?.tenant_id) {
+          const { data } = await supabase
+            .from('tenants')
+            .select('*')
+            .eq('id', activeUser.tenant_id)
+            .maybeSingle();
+          if (data) tenantData = data;
+        }
+
+        if (!tenantData) {
+          const { data } = await supabase
+            .from('tenants')
+            .select('*')
+            .limit(1)
+            .maybeSingle();
+          if (data) tenantData = data;
+        }
+
+        if (isMounted && tenantData) {
+          setDbTenantId(tenantData.id);
+          setCompanyName(tenantData.name || tenantData.company_name || '');
+          setPhone(tenantData.phone || '');
+          setEmail(tenantData.email || '');
+          setMayarApiKey(tenantData.mayar_api_key || '');
+          setAddress(tenantData.address || '');
+          setSkMenkumham(tenantData.sk_menkumham || '');
           setLogoUrl(getValidLogoUrl(tenantData.logo_url));
         }
 
@@ -321,12 +345,13 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
 
     setIsSaving(true);
     try {
+      const targetTenantId = dbTenantId || activeTenant.id || activeUser.tenant_id;
+
       // 1. Direct UPSERT/UPDATE to Supabase table 'tenants'
       const updatePayload: any = {
-        id: activeTenant.id,
         name: companyName.trim(),
         company_name: companyName.trim(),
-        address: address.trim() || null,
+        address: address.trim(),
         phone: phone.trim() || null,
         email: email.trim() || null,
         sk_menkumham: skMenkumham.trim() || null,
@@ -337,16 +362,31 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
         bank_account_name: firstBank?.bank_account_name?.trim() || null
       };
 
-      const { error: sbErr } = await supabase
+      let { error: sbErr } = await supabase
         .from('tenants')
-        .upsert(updatePayload);
+        .update(updatePayload)
+        .eq('id', targetTenantId);
 
+      // If full update failed (e.g. some optional columns don't exist in PostgreSQL), update core columns
       if (sbErr) {
-        console.warn('Supabase tenant UPSERT error, falling back to update:', sbErr);
-        await supabase
+        console.warn('Supabase tenant full update error, trying core columns:', sbErr);
+        const { error: coreErr } = await supabase
           .from('tenants')
-          .update(updatePayload)
-          .eq('id', activeTenant.id);
+          .update({
+            company_name: companyName.trim(),
+            address: address.trim()
+          })
+          .eq('id', targetTenantId);
+
+        if (coreErr) {
+          await supabase
+            .from('tenants')
+            .update({
+              name: companyName.trim(),
+              address: address.trim()
+            })
+            .eq('id', targetTenantId);
+        }
       }
 
       // 2. Sync to 'bank_accounts' table in Supabase
@@ -388,18 +428,20 @@ export default function OfficeSettings({ activeUser, activeTenant }: OfficeSetti
         }
       }
 
-      // 3. Also update mockDb store state (persists in localStorage & notifies app subscribers)
-      await mockDb.updateTenantSettings(activeTenant.id, mayarApiKey, activeUser.name, {
+      // 3. Update store state and trigger immediate fetchAndSyncAll()
+      await mockDb.updateTenantSettings(targetTenantId, mayarApiKey, activeUser.name, {
         company_name: companyName.trim(),
-        address,
-        sk_menkumham: skMenkumham,
-        logo_url: logoUrl,
+        address: address.trim(),
+        sk_menkumham: skMenkumham.trim(),
+        logo_url: logoUrl.trim(),
         bank_name: firstBank.bank_name,
         bank_account: JSON.stringify(accountsToSave),
         bank_account_name: firstBank.bank_account_name,
-        phone,
-        email
+        phone: phone.trim(),
+        email: email.trim()
       });
+
+      await mockDb.fetchAndSyncAll();
       
       setSuccessMessage('Pengaturan Kantor & Daftar Rekening Bank Berhasil Disimpan Ke Database Supabase!');
       
