@@ -149,7 +149,9 @@ class MockDatabaseStore {
 
   // Helper to check if Supabase is actually configured
   public isSupabaseConfigured(): boolean {
-    const url = (import.meta as any).env.VITE_SUPABASE_URL || 'https://notaris-db.arsyaridwan.com/';
+    const url =
+      (import.meta as any).env?.VITE_SUPABASE_URL ||
+      (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_URL : undefined);
     return !!url;
   }
 

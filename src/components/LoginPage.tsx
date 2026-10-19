@@ -15,6 +15,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import { mockDb } from '../lib/mockStore';
+import { supabase } from '../lib/supabase';
 import { User as UserType } from '../data/schemaData';
 
 interface LoginPageProps {
@@ -47,7 +48,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
     try {
       if (isSupabase) {
-        const { supabase } = await import('../lib/supabase');
         let authenticatedUser: UserType | null = null;
 
         const emailToTry = emailOrUsername.includes('@') 
@@ -176,25 +176,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
   };
 
-  // Instant Sesi Trigger for rapid review and multi-role testing
-  const handleInstantSession = async (user: UserType) => {
-    setLoading(true);
-    setErrorMessage('');
-    setSuccessMessage('');
-    
-    try {
-      localStorage.setItem('notaris_active_user', JSON.stringify(user));
-    } catch {
-      // LocalStorage write error ignored
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 300));
-    setSuccessMessage(`Mengalihkan sesi: ${user.name}`);
-    setTimeout(() => {
-      onLoginSuccess(user);
-      setLoading(false);
-    }, 800);
-  };
 
   return (
     <div id="login-page-container" className="min-h-screen bg-slate-950 flex items-center justify-center p-4 sm:p-6 md:p-8 font-sans">

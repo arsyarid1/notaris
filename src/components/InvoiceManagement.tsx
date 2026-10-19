@@ -593,10 +593,8 @@ ${fullTenant.company_name}`;
       const h2p: any = html2pdf;
       if (typeof h2p === 'function') {
         worker = h2p();
-      } else {
-        const module: any = await import('html2pdf.js');
-        const html2pdfFunc: any = module.default || module;
-        worker = html2pdfFunc();
+      } else if (h2p && typeof h2p.default === 'function') {
+        worker = h2p.default();
       }
 
       if (worker) {

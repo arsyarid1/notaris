@@ -66,13 +66,7 @@ export default function App() {
       return null;
     }
   });
-  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(() => {
-    try {
-      return !localStorage.getItem('notaris_active_user');
-    } catch {
-      return true;
-    }
-  });
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'tasks' | 'templates' | 'clients' | 'invoices' | 'employees' | 'settings' | 'sql' | 'erd' | 'simulator' | 'docs'>('dashboard');
   const [selectedUserId, setSelectedUserId] = useState<string>(() => {
     try {
@@ -82,15 +76,15 @@ export default function App() {
         if (u?.id) return u.id;
       }
     } catch {}
-    return MOCK_USERS[0].id;
+    return '';
   });
   const [isLightMode, setIsLightMode] = useState(true); // Defaults to Light Mode!
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [storeTick, setStoreTick] = useState(0);
 
   // Find active tenant & user details based on current selection
-  const activeUser = mockDb.users.find(u => u.id === selectedUserId) as User || mockDb.users[0] || MOCK_USERS[0];
-  const activeTenant = mockDb.tenants.find(t => t.id === activeUser.tenant_id) as Tenant || mockDb.tenants[0];
+  const activeUser = loggedInUser || (selectedUserId ? (mockDb.users.find(u => u.id === selectedUserId) as User) : null) || mockDb.users[0];
+  const activeTenant = (activeUser && mockDb.tenants.find(t => t.id === activeUser.tenant_id)) || mockDb.tenants[0];
 
   // Sync selectedUserId with loggedInUser when loggedInUser changes
   useEffect(() => {
@@ -99,14 +93,16 @@ export default function App() {
       try {
         localStorage.setItem('notaris_active_user', JSON.stringify(loggedInUser));
       } catch {}
+    } else {
+      setSelectedUserId('');
     }
   }, [loggedInUser]);
 
   // Keep loggedInUser in sync if simulated user is switched in the dropdown
   useEffect(() => {
-    if (!selectedUserId) return;
+    if (!loggedInUser || !selectedUserId) return;
     const matchedUser = mockDb.users.find(u => u.id === selectedUserId);
-    if (matchedUser && matchedUser.id !== loggedInUser?.id) {
+    if (matchedUser && matchedUser.id !== loggedInUser.id) {
       setLoggedInUser(matchedUser);
       try {
         localStorage.setItem('notaris_active_user', JSON.stringify(matchedUser));
@@ -139,38 +135,25 @@ export default function App() {
           if (session?.user) {
             await syncUserFromSession(session.user);
           } else {
-            // Verify from stored session if present
-            const savedStr = localStorage.getItem('notaris_active_user');
-            if (savedStr) {
-              try {
-                const savedUser = JSON.parse(savedStr);
-                if (savedUser?.id) {
-                  // Verify user from Supabase database
-                  const { data: dbUser } = await supabase
-                    .from('users')
-                    .select('*')
-                    .eq('id', savedUser.id)
-                    .maybeSingle();
-
-                  if (dbUser && isMounted) {
-                    setLoggedInUser(dbUser as User);
-                    setSelectedUserId(dbUser.id);
-                    localStorage.setItem('notaris_active_user', JSON.stringify(dbUser));
-                    return;
-                  }
-                }
-              } catch {
-                // Ignore parse error
-              }
-            }
-
-            if (!localStorage.getItem('notaris_active_user') && isMounted) {
-              setLoggedInUser(null);
+            // No active session: state user mutlak bernilai null
+            localStorage.removeItem('notaris_active_user');
+            setLoggedInUser(null);
+            setSelectedUserId('');
+            if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+              window.history.replaceState(null, '', '/login');
             }
           }
         }
       } catch (err) {
         console.error('Error checking Supabase session on boot:', err);
+        if (isMounted) {
+          localStorage.removeItem('notaris_active_user');
+          setLoggedInUser(null);
+          setSelectedUserId('');
+          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+            window.history.replaceState(null, '', '/login');
+          }
+        }
       } finally {
         if (isMounted) setIsAuthLoading(false);
       }
@@ -182,9 +165,13 @@ export default function App() {
       if (isMounted) {
         if (session?.user) {
           await syncUserFromSession(session.user);
-        } else if (event === 'SIGNED_OUT') {
+        } else if (event === 'SIGNED_OUT' || !session) {
           localStorage.removeItem('notaris_active_user');
           setLoggedInUser(null);
+          setSelectedUserId('');
+          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+            window.history.replaceState(null, '', '/login');
+          }
         }
         setIsAuthLoading(false);
       }
@@ -197,8 +184,13 @@ export default function App() {
   }, []);
 
   const syncUserFromSession = async (authUser: any) => {
-    const email = authUser.email;
-    if (!email) return;
+    const email = authUser?.email;
+    if (!email) {
+      setLoggedInUser(null);
+      setSelectedUserId('');
+      localStorage.removeItem('notaris_active_user');
+      return;
+    }
 
     try {
       const { data: profile } = await supabase
@@ -219,38 +211,62 @@ export default function App() {
       console.error('Profile sync error from users table:', err);
     }
 
-    const matched = mockDb.users.find(
-      u => u.email?.toLowerCase() === email.toLowerCase() || 
-           (u.username && u.username.toLowerCase() === email.split('@')[0].toLowerCase())
-    );
+    const cleanPrefix = email.split('@')[0].toLowerCase();
+    try {
+      const { data: dbUserByUsername } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('username', cleanPrefix)
+        .maybeSingle();
 
-    if (matched) {
-      setLoggedInUser(matched);
-      setSelectedUserId(matched.id);
-      try {
-        localStorage.setItem('notaris_active_user', JSON.stringify(matched));
-      } catch {}
-    } else {
-      const fallback = mockDb.users[0] || MOCK_USERS[0];
-      setLoggedInUser(fallback);
-      setSelectedUserId(fallback.id);
-      try {
-        localStorage.setItem('notaris_active_user', JSON.stringify(fallback));
-      } catch {}
+      if (dbUserByUsername) {
+        setLoggedInUser(dbUserByUsername as User);
+        setSelectedUserId(dbUserByUsername.id);
+        try {
+          localStorage.setItem('notaris_active_user', JSON.stringify(dbUserByUsername));
+        } catch {}
+        return;
+      }
+    } catch (err) {
+      console.error('Profile sync error by username from users table:', err);
     }
+
+    // No valid profile found: do not fall back to dummy mock users! User must be null.
+    setLoggedInUser(null);
+    setSelectedUserId('');
+    localStorage.removeItem('notaris_active_user');
   };
 
   const handleLogout = async () => {
     try {
-      localStorage.removeItem('notaris_active_user');
-      await supabase.auth.signOut();
+      // 1. Purge all localStorage keys related to auth and user
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sb-') || key.includes('auth-token') || key === 'notaris_active_user')) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch (storageErr) {
+        console.error('Error clearing auth tokens from localStorage:', storageErr);
+      }
+
+      // 2. Perform Supabase signOut with local scope
+      await supabase.auth.signOut({ scope: 'local' });
     } catch (err) {
       console.error('Error during Supabase signOut:', err);
     } finally {
-      localStorage.removeItem('notaris_active_user');
+      try {
+        localStorage.removeItem('notaris_active_user');
+      } catch {}
       setLoggedInUser(null);
       setSelectedUserId('');
       setIsMobileMenuOpen(false);
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.history.replaceState(null, '', '/login');
+      }
     }
   };
 
@@ -314,6 +330,9 @@ export default function App() {
   }
 
   if (!loggedInUser) {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.history.replaceState(null, '', '/login');
+    }
     return (
       <LoginPage 
         onLoginSuccess={(user) => {
@@ -322,6 +341,9 @@ export default function App() {
           try {
             localStorage.setItem('notaris_active_user', JSON.stringify(user));
           } catch {}
+          if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+            window.history.replaceState(null, '', '/');
+          }
         }} 
       />
     );
